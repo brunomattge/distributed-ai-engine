@@ -2,7 +2,7 @@
 
 **Status:** Architecture proposal / RFC 001
 **Origin:** Existing `distributed-ai-agent` project
-**Target:** Hardware-agnostic distributed AI inference platform with optional RAG and agent applications
+**Target:** Distributed AI Engine for connected hardware, with optional RAG and agent applications
 **Document date:** 2026-11-14
 
 ## 1. Executive Summary
@@ -147,7 +147,7 @@ Do not put LangGraph, LangChain, LlamaIndex, a vector database or any agent fram
 
 Suggested repository short description:
 
-> Distributed AI inference across connected hardware, starting with Android RPC workers.
+> Distributed AI Engine for connected hardware, starting with Android RPC workers.
 
 The README must separate **Implemented / Experimental / Planned** capabilities. The short repository description is product positioning, not proof that every platform or feature is currently supported.
 
