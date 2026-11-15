@@ -2,7 +2,7 @@
 
 **Status:** Architecture proposal / RFC 001
 **Origin:** Existing `distributed-ai-agent` project
-**Target:** Open-source, hardware-agnostic distributed AI inference platform with optional RAG and agent applications
+**Target:** Hardware-agnostic distributed AI inference platform with optional RAG and agent applications
 **Document date:** 2026-11-14
 
 ## 1. Executive Summary
@@ -147,7 +147,7 @@ Do not put LangGraph, LangChain, LlamaIndex, a vector database or any agent fram
 
 Suggested repository short description:
 
-> Open-source distributed AI inference engine for heterogeneous devices, with extensible APIs for LLMs, RAG and agents.
+> Distributed AI inference engine for heterogeneous devices, with extensible APIs for LLMs, RAG and agents.
 
 The README must separate **Implemented / Experimental / Planned** capabilities. The short repository description is product positioning, not proof that every platform or feature is currently supported.
 
@@ -284,7 +284,7 @@ The scheduler must distinguish workload types and routing policies. Avoid confla
 
 **Exit criteria:** At least one external application can consume the documented inference API; optional RAG/agent examples have independent acceptance criteria and cannot destabilize the core.
 
-### Milestone 6 — Public open-source platform
+### Milestone 6 — Public platform
 
 - Install guides, setup scripts, API documentation, security disclosures, ADRs, CI, integration tests, compatible OSS licenses, and contribution guide.
 - Package the existing chatbot as an example client; document LLM support as core and RAG/agent examples as optional.
