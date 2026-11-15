@@ -1,6 +1,6 @@
 # Distributed AI Engine
 
-A platform for distributed AI inference across connected devices, starting with Android RPC workers. The existing chatbot is its first application; RAG and AI agents are optional applications built on the engine.
+A platform for distributed AI inference across connected hardware, starting with Android RPC workers. The existing chatbot is its first application; RAG and AI agents are optional applications built on the engine.
 
 ## Product direction
 

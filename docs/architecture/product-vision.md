@@ -9,7 +9,7 @@
 
 We have a working prototype currently called **Distributed AI Agent**. It offers a chatbot and reports three Samsung Galaxy A07 smartphones (4 GB physical RAM each) participating when a prompt is submitted. The dashboard also shows node online/offline status when USB connections are interrupted.
 
-We want to evolve this existing project into **Distributed AI Engine**, a reusable, extensible platform for orchestrating compute and AI inference across connected devices with different capabilities. The chatbot remains the first client of the engine. RAG pipelines and agent-based applications are optional clients, not dependencies or core identity of the platform. **LLM inference is a core product capability**; RAG and agents are planned extensions.
+We want to evolve this existing project into **Distributed AI Engine**, a reusable, extensible platform for orchestrating compute and AI inference across connected hardware with different capabilities. The chatbot remains the first client of the engine. RAG pipelines and agent-based applications are optional clients, not dependencies or core identity of the platform. **LLM inference is a core product capability**; RAG and agents are planned extensions.
 
 **Non-negotiable:** Inspect and preserve the existing implementation. Do not rewrite or rename the repository before proposing a compatible migration plan. The reported multi-device behavior is a working user observation; verify whether it is truly *single-model distributed inference*, concurrent independent requests, or another form of coordination using instrumentation.
 
@@ -147,7 +147,7 @@ Do not put LangGraph, LangChain, LlamaIndex, a vector database or any agent fram
 
 Suggested repository short description:
 
-> Distributed AI inference engine across connected devices, starting with Android RPC workers.
+> Distributed AI inference across connected hardware, starting with Android RPC workers.
 
 The README must separate **Implemented / Experimental / Planned** capabilities. The short repository description is product positioning, not proof that every platform or feature is currently supported.
 

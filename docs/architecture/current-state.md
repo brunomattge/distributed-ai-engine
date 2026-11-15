@@ -62,7 +62,7 @@ Relevant code: `apps/web/src/app/`, `src/dotnet/DistributedAI.Platform/`, `src/d
 - Wi-Fi/LAN inference transport; the owner has explicitly deferred it and selected USB for current experiments.
 - A supported Android process/node agent that works independently of USB debugging.
 - Whether the current model/API path is suitable as a stable, versioned engine API for external clients.
-- Generalized placement across different device types, multiple clusters, independent model replicas, authentication/enrollment, job lifecycle and failure recovery.
+- Generalized placement across different hardware types, multiple clusters, independent model replicas, authentication/enrollment, job lifecycle and failure recovery.
 - Time-to-first-token and live per-device CPU/RAM/temperature correlated to the same inference request.
 - Reproduction of all historical measurements from a clean checkout on current hardware.
 
