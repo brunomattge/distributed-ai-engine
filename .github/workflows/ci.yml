@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python tests and source checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Run Python tests
+        run: python -m unittest discover -s tests -v
+      - name: Compile Python sources
+        run: python -m compileall -q experiments/phase-3/python tests/python tools
+      - name: Check shell script syntax
+        run: git ls-files -z '*.sh' | xargs -0 -n 1 bash -n
+
+  dotnet:
+    name: .NET build, tests, and platform smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: distributed_ai
+          POSTGRES_USER: distributed_ai
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U distributed_ai -d distributed_ai"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CHAT_DATABASE_URL: "Host=127.0.0.1;Port=5432;Database=distributed_ai;Username=distributed_ai;Password=ci-only-password"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+      - name: Apply database schema
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          for migration in infra/postgres/*.sql; do
+            docker exec -i "$POSTGRES_CONTAINER_ID" \
+              psql -v ON_ERROR_STOP=1 -U distributed_ai -d distributed_ai < "$migration"
+          done
+      - name: Build .NET solution
+        run: dotnet build DistributedAI.slnx
+      - name: Run .NET tests, including PostgreSQL integration tests
+        run: dotnet test DistributedAI.slnx --no-build
+      - name: Run platform and simulator smoke test
+        run: ./tools/phase-1-smoke.sh
+
+  web:
+    name: Angular build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.15.0"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install locked dependencies
+        working-directory: apps/web
+        run: npm ci
+      - name: Build Angular application
+        working-directory: apps/web
+        run: npm run build
+      - name: Run Angular tests
+        working-directory: apps/web
+        run: npm test -- --watch=false

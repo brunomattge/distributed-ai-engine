@@ -137,6 +137,12 @@ performance. TTFT was not recorded separately. See the [English comparison
 summary in this guide; raw device logs remain local and are excluded from Git. The selection control is experimental; it is
 not scheduler placement or proof of per-phone model readiness.
 
+### Runtime-observed first-content smoke — 2026-11-15
+
+The updated streaming chat path was exercised with the fast Qwen2.5 0.5B Q4_K_M profile and all three USB workers (two Galaxy A07s and one Galaxy A06, Android 16). The prompt was `Reply with exactly: OK.` The response streamed `OK.`; each selected worker logged two `GRAPH_RECOMPUTE` operations. Model weights were allocated as 90 MiB, 78 MiB, and 205 MiB on RPC0/RPC1/RPC2, with 0 MiB on the Mac Host. Model startup took 20 s; prompt evaluation took 8.14 s; generation took 0.55 s at 3.66 tokens/s; total llama.cpp request time was 8.69 s.
+
+The Python runtime observed 8,150.9 ms from starting stream processing until the first non-empty content chunk and printed that value to Terminal and `chat-events.jsonl`. This includes the runtime-to-llama-server request path and is not model-only TTFT. This is one smoke sample; it does not measure per-device RAM/temperature during inference or establish a performance trend. The English session summary and raw coordinator/worker logs are local artifacts excluded from Git.
+
 ### .NET gateway regression after inference-contract extraction
 
 On 2026-11-14, the Angular chat proxy was exercised through the current .NET API, Python runtime and the same llama.cpp model server/RPC workers. It returned the streamed answer `OK` with HTTP 200. The end-to-end HTTP request took about 5.2 seconds. A separate isolated run of the same four-component path also returned HTTP 200 in 5.63 seconds.

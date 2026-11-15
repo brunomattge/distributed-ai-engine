@@ -115,6 +115,8 @@ The project license is MIT; third-party materials keep their own terms as record
 
 ## Tests
 
+GitHub Actions runs the Python test suite and source checks, the .NET build and tests with a temporary PostgreSQL service, a platform/simulator smoke test, and the Angular build and tests for pushes and pull requests. It does not run physical-device inference; the Android RPC acceptance checks still require the connected phones.
+
 Run the local API tests without phones or a model:
 
 ```sh

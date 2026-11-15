@@ -1,6 +1,6 @@
 # Current architecture and verified baseline
 
-**Last reviewed:** 2026-11-14
+**Last reviewed:** 2026-11-15
 **Reference vision:** [Distributed AI Engine product vision](product-vision.md)
 **Status:** Repository and recorded-run audit; not a claim that every run was reproduced during this review.
 
@@ -42,7 +42,7 @@ The diagram describes the current dashboard plus its intended/current chat integ
 | Inference | Upstream llama.cpp `llama-server` + `ggml-rpc-server` Android ARM64 workers; one GGUF distributed by RPC | Experimental, development scripts, USB ADB transport; RPC is unauthenticated |
 | Android node telemetry | Mac-hosted Python ADB bridge reads CPU, available RAM and thermal service; hashes serials | It is a development bridge, not an Android-resident authenticated node agent; only listed Samsung models are accepted |
 | Persistence | Dedicated local PostgreSQL container; chat snapshots and user-managed notes | No document/vector store; no multi-user tenancy |
-| Packaging/operations | Shell launchers, experiment records, local build/test instructions | No CI/release artifact yet; components are not one installable product |
+| Packaging/operations | Shell launchers, experiment records, local build/test instructions, GitHub Actions CI for host-side checks | No versioned release artifact; components are not one installable product |
 
 Relevant code: `apps/web/src/app/`, `src/dotnet/DistributedAI.Platform/`, `src/dotnet/DistributedAI.Contracts/`, `experiments/phase-3/python/inference/`, `experiments/phase-3/python/agent_runtime/`, `experiments/phase-0/`, `experiments/phase-1/`, and `tools/`.
 
@@ -63,8 +63,9 @@ Relevant code: `apps/web/src/app/`, `src/dotnet/DistributedAI.Platform/`, `src/d
 - A supported Android process/node agent that works independently of USB debugging.
 - Whether the current model/API path is suitable as a stable, versioned engine API for external clients.
 - Generalized placement across different hardware types, multiple clusters, independent model replicas, authentication/enrollment, job lifecycle and failure recovery.
-- Time-to-first-token and live per-device CPU/RAM/temperature correlated to the same inference request.
+- Model-only time-to-first-token and live per-device CPU/RAM/temperature correlated to the same inference request. The Python streaming runtime now records one runtime-observed first-content sample; it includes the request path and is not model-only TTFT.
 - Reproduction of all historical measurements from a clean checkout on current hardware.
+- A versioned release and contributor reproduction of the documented setup.
 
 The recorded RPC evidence supports **single-model distributed execution on the current mixed three-phone cohort over USB**. It does not establish three A07 support, Wi-Fi support, fault-tolerant continuation after worker loss, or broad platform compatibility.
 
