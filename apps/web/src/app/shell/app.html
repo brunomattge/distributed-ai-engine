@@ -1,0 +1,28 @@
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Main navigation">
+    <a class="brand" routerLink="/cluster" aria-label="Distributed AI Agent home">
+      <span class="brand-mark">da</span>
+      <span class="brand-copy"><strong>distributed</strong><small>AI AGENT</small></span>
+    </a>
+
+    <div class="workspace-label">WORKSPACE</div>
+    <nav>
+      <a class="nav-item" routerLink="/cluster" routerLinkActive="active" ariaCurrentWhenActive="page">
+        <span class="nav-icon" aria-hidden="true">◫</span> Overview
+      </a>
+      <a class="nav-item" routerLink="/chat" routerLinkActive="active" ariaCurrentWhenActive="page">
+        <span class="nav-icon" aria-hidden="true">✳</span> Agent chat
+      </a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="sidebar-device-icon" aria-hidden="true">⌘</div>
+      <div><strong>Control plane</strong><span>Local API · port 5100</span></div>
+      <span class="live-dot" aria-label="API connected"></span>
+    </div>
+  </aside>
+
+  <div class="route-outlet">
+    <router-outlet />
+  </div>
+</div>

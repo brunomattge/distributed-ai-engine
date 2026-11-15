@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/dotnet/DistributedAI.Contracts/DistributedAI.Contracts.csproj" />
+  <Project Path="src/dotnet/DistributedAI.Platform/DistributedAI.Platform.csproj" />
+  <Project Path="tools/DistributedAI.NodeSimulator/DistributedAI.NodeSimulator.csproj" />
+  <Project Path="tests/dotnet/DistributedAI.Platform.Tests/DistributedAI.Platform.Tests.csproj" />
+</Solution>

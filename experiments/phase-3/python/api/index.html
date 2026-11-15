@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Distributed AI Agent</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #101318;
+      color: #edf0f5;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: flex; justify-content: center; }
+    main { width: min(900px, 100%); min-height: 100vh; padding: 26px 22px; display: flex; flex-direction: column; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid #272d37; }
+    h1 { font-size: 19px; margin: 0 0 5px; letter-spacing: .01em; }
+    .subtitle { font-size: 13px; color: #9da7b6; }
+    .local-badge { border: 1px solid #285c4d; color: #8de0bd; border-radius: 999px; padding: 7px 11px; font-size: 12px; white-space: nowrap; }
+    #messages { flex: 1; padding: 28px 0; display: flex; flex-direction: column; gap: 18px; }
+    .welcome { margin: auto; text-align: center; color: #aab4c2; max-width: 500px; line-height: 1.6; }
+    .welcome strong { color: #edf0f5; display: block; font-size: 22px; margin-bottom: 8px; }
+    .message { max-width: 82%; border-radius: 15px; padding: 13px 16px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .message.user { align-self: flex-end; background: #26364d; }
+    .message.assistant { align-self: flex-start; background: #1b2029; border: 1px solid #2c3340; }
+    .tool-note { align-self: flex-start; color: #89d8b5; font-size: 12px; padding-left: 10px; }
+    .composer { border: 1px solid #353d4a; border-radius: 16px; background: #171b22; padding: 12px; }
+    textarea { display: block; width: 100%; border: 0; outline: 0; resize: vertical; min-height: 56px; max-height: 180px; background: transparent; color: #edf0f5; font: inherit; font-size: 15px; padding: 6px; }
+    textarea::placeholder { color: #8993a2; }
+    .composer-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 8px; }
+    .hint { color: #8791a0; font-size: 12px; }
+    button { border: 0; border-radius: 10px; cursor: pointer; font: inherit; }
+    .status-button { background: transparent; color: #aebbd0; padding: 8px 10px; font-size: 12px; }
+    .status-button:hover { background: #252b35; }
+    .send-button { background: #d8e4ff; color: #131923; font-weight: 650; padding: 9px 15px; }
+    .send-button:disabled { opacity: .45; cursor: wait; }
+    #error { min-height: 20px; color: #ff9c9c; font-size: 13px; padding: 7px 4px 0; }
+    @media (max-width: 600px) {
+      main { padding: 18px 14px; }
+      .message { max-width: 94%; }
+      .local-badge { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Distributed AI Agent</h1>
+        <div class="subtitle">Local chat with a model distributed across phones</div>
+      </div>
+      <div class="local-badge">● Running on this Mac</div>
+    </header>
+
+    <section id="messages" aria-live="polite">
+      <div class="welcome" id="welcome">
+        <strong>What would you like to explore?</strong>
+        Ask the model a question. When you ask about phone status, the agent can check the live cluster.
+      </div>
+    </section>
+
+    <form class="composer" id="form">
+      <textarea id="input" rows="2" placeholder="Write a message..." aria-label="Message"></textarea>
+      <div class="composer-footer">
+        <button class="status-button" type="button" id="status-button">Check cluster</button>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="hint">Enter sends · Shift+Enter adds a new line</span>
+          <button class="send-button" id="send" type="submit">Send</button>
+        </div>
+      </div>
+    </form>
+    <div id="error" role="status"></div>
+  </main>
+
+  <script>
+    const messages = [];
+    const form = document.getElementById("form");
+    const input = document.getElementById("input");
+    const sendButton = document.getElementById("send");
+    const messageList = document.getElementById("messages");
+    const errorBox = document.getElementById("error");
+    const welcome = document.getElementById("welcome");
+
+    function addBubble(role, text) {
+      if (welcome) welcome.remove();
+      const bubble = document.createElement("div");
+      bubble.className = "message " + role;
+      bubble.textContent = text;
+      messageList.appendChild(bubble);
+      bubble.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      return bubble;
+    }
+
+    async function submitMessage(text) {
+      const clean = text.trim();
+      if (!clean || sendButton.disabled) return;
+      errorBox.textContent = "";
+      input.value = "";
+      messages.push({ role: "user", content: clean });
+      addBubble("user", clean);
+      const pending = addBubble("assistant", "Thinking…");
+      sendButton.disabled = true;
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: messages })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not chat with the model.");
+        pending.textContent = data.reply;
+        messages.push({ role: "assistant", content: data.reply });
+        for (const event of (data.tool_events || [])) {
+          const note = document.createElement("div");
+          note.className = "tool-note";
+          note.textContent = "Tool called: " + event.tool + (event.healthy ? " · cluster healthy" : " · cluster degraded");
+          messageList.insertBefore(note, pending);
+        }
+      } catch (error) {
+        pending.remove();
+        errorBox.textContent = error.message;
+      } finally {
+        sendButton.disabled = false;
+        input.focus();
+      }
+    }
+
+    form.addEventListener("submit", function(event) {
+      event.preventDefault();
+      submitMessage(input.value);
+    });
+    input.addEventListener("keydown", function(event) {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        submitMessage(input.value);
+      }
+    });
+    document.getElementById("status-button").addEventListener("click", function() {
+      submitMessage("Check cluster status and tell me whether all three phones are ready.");
+    });
+  </script>
+</body>
+</html>

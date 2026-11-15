@@ -1,0 +1,32 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+
+# Keep internal development planning files on the local machine.
+/docs/roadmap.md
+/docs/release-checklist.md
+
+# Generated native builds and pinned upstream checkout.
+/experiments/phase-0/build-mac/
+/experiments/phase-0/build-android/
+/experiments/phase-0/upstream-llama.cpp/
+
+# Model weights are downloaded separately under their own terms.
+/experiments/phase-0/models/*.gguf
+
+# Local run state contains device identifiers, raw logs, and runtime data.
+/experiments/phase-0/results/
+/experiments/phase-1/results/
+/experiments/phase-1/.runtime/
+/experiments/phase-3/chat-events.jsonl
+
+# .NET, Angular, and Python outputs for the planned platform.
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+.venv/
+venv/

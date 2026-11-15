@@ -1,0 +1,132 @@
+<main class="main-content">
+  <header class="topbar">
+    <div class="breadcrumb"><span>Workspace</span><span class="breadcrumb-separator">/</span><strong>Cluster</strong></div>
+    <div class="topbar-right">
+      <span class="api-indicator" [class.disconnected]="apiError()">
+        <span class="live-dot"></span>{{ apiError() ? 'API disconnected' : loading() ? 'Connecting…' : 'API connected' }}
+      </span>
+      <div class="avatar" aria-label="Local user">B</div>
+    </div>
+  </header>
+
+  <section class="page-content">
+    <div class="page-heading">
+      <div>
+        <div class="eyebrow">INFRASTRUCTURE</div>
+        <h1>Cluster overview</h1>
+        <p class="page-subtitle">Monitor connected nodes, availability, and telemetry.</p>
+      </div>
+      <button class="refresh-button" type="button" (click)="refresh()" [disabled]="loading()" aria-label="Refresh nodes">
+        <span aria-hidden="true" [class.spin]="loading()">↻</span> Refresh
+      </button>
+    </div>
+
+    @if (simulationMode()) {
+      <div class="notice simulation-notice" role="note">
+        <span class="notice-icon" aria-hidden="true">ⓘ</span>
+        <span><strong>Simulation environment</strong> The data below comes from the simulator and does not represent phone measurements.</span>
+      </div>
+    }
+
+    @if (androidMode()) {
+      <div class="notice android-notice" role="note">
+        <span class="notice-icon" aria-hidden="true">ⓘ</span>
+        <span><strong>Android telemetry via ADB</strong> CPU, available RAM, and surface temperature come from the phones. ADB checks the RPC process; “running” does not mean a model is loaded or ready for inference. “ADB collection” is the total time for ADB queries, not RPC latency.</span>
+      </div>
+    }
+
+    @if (apiError()) {
+      <div class="notice error-notice" role="alert">
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <span>{{ apiError() }} Check that the API is running at <code>127.0.0.1:5100</code>.</span>
+        <button class="text-button" type="button" (click)="refresh()">Try again</button>
+      </div>
+    }
+
+    <div class="summary-grid" aria-label="Cluster summary">
+      <article class="summary-card">
+        <div class="summary-top"><span class="summary-label">Registered nodes</span><span class="summary-icon blue">⌘</span></div>
+        <div class="summary-value">{{ nodes().length }}<span class="summary-unit">nodes</span></div>
+        <div class="summary-foot">Devices known to the API</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-top"><span class="summary-label">Online nodes</span><span class="summary-icon green">↗</span></div>
+        <div class="summary-value">{{ onlineCount() }}<span class="summary-total">/ {{ nodes().length }}</span></div>
+        <div class="summary-foot"><span class="status-dot" [class.online-dot]="onlineCount() > 0"></span> Recent heartbeat received</div>
+      </article>
+      <article class="summary-card summary-update">
+        <div class="summary-top"><span class="summary-label">Last updated</span><span class="summary-icon violet">◷</span></div>
+        <div class="summary-value time-value">{{ formatTime(lastUpdated()) }}</div>
+        <div class="summary-foot">Auto-refresh every 5 seconds</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-top"><span class="summary-label">Model server</span><span class="summary-icon green">◉</span></div>
+        <div class="summary-value model-status-value">{{ inferenceStatusLabel(inferenceStatus().state) }}</div>
+        <div class="summary-foot">{{ inferenceStatus().modelName }} · {{ inferenceStatus().activeRpcWorkers }}/{{ inferenceStatus().requiredWorkers }} active RPC processes · coordinator: {{ inferenceStatus().coordinatorState }}</div>
+      </article>
+    </div>
+
+    <div class="section-heading">
+      <div><h2>Devices</h2><p>Current state and metrics collected from each node.</p></div>
+      <span class="node-count">{{ nodes().length }} {{ nodes().length === 1 ? 'device' : 'devices' }}</span>
+    </div>
+
+    @if (nodes().length > 0) {
+      <div class="node-grid">
+        @for (node of nodes(); track node.nodeId) {
+          <article class="node-card">
+            <div class="node-card-top">
+              <div class="device-illustration" aria-hidden="true"><span></span><i></i></div>
+              <span class="health-pill" [class.online]="node.health === 'Online'" [class.offline]="node.health === 'Offline'" [class.awaiting]="node.health === 'AwaitingHeartbeat'">
+                <span class="status-dot"></span>{{ healthLabel(node.health) }}
+              </span>
+            </div>
+            <div class="node-identity">
+              <h3>{{ node.name }}</h3>
+              <div class="node-model">{{ node.hardwareModel }} <span>·</span> {{ node.nodeId }}</div>
+            </div>
+            <div class="node-divider"></div>
+            <div class="metrics-grid">
+              <div class="metric-cell">
+                <span class="metric-label">CPU</span>
+                <strong>{{ metric(node, 'cpuPercent') === null ? '—' : (metric(node, 'cpuPercent')! | number: '1.0-1') + '%' }}</strong>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-label">Available RAM</span>
+                <strong>{{ metric(node, 'availableRamMiB') === null ? '—' : (metric(node, 'availableRamMiB')! | number: '1.0-0') + ' MiB' }}</strong>
+                @if (metric(node, 'availableRamMiB') !== null) {
+                  <div class="ram-track" aria-label="Available RAM out of 4096 MiB"><span [style.width.%]="ramPercent(node)"></span></div>
+                }
+              </div>
+              <div class="metric-cell">
+                <span class="metric-label">Temperature</span>
+                <strong>{{ metric(node, 'temperatureCelsius') === null ? '—' : (metric(node, 'temperatureCelsius')! | number: '1.0-1') + ' °C' }}</strong>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-label">{{ latencyLabel(node) }}</span>
+                <strong>{{ metric(node, 'latencyMs') === null ? '—' : (metric(node, 'latencyMs')! | number: '1.0-0') + ' ms' }}</strong>
+              </div>
+            </div>
+            <div class="heartbeat-row">
+              <span class="heartbeat-label">Last heartbeat</span>
+              <span>{{ node.lastHeartbeatAtUtc ? (node.lastHeartbeatAtUtc | date: 'HH:mm:ss') : 'Not received yet' }}</span>
+            </div>
+            <div class="heartbeat-row">
+              <span class="heartbeat-label">RPC process</span>
+              <span>{{ rpcWorkerProcessLabel(node.rpcWorkerProcessState) }}</span>
+            </div>
+          </article>
+        }
+      </div>
+    } @else if (!loading() && !apiError()) {
+      <div class="empty-state">
+        <div class="empty-illustration" aria-hidden="true">⌘</div>
+        <h3>No devices registered</h3>
+        <p>Start the simulator or connect compatible phones over USB ADB.</p>
+        <code>./tools/run-dashboard.sh [simulator|adb]</code>
+      </div>
+    } @else if (loading() && nodes().length === 0) {
+      <div class="empty-state loading-state" aria-live="polite">Connecting to the cluster API…</div>
+    }
+  </section>
+</main>
