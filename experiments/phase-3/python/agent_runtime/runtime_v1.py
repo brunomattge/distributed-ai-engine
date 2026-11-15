@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -163,6 +164,13 @@ class AgentRuntimeV1:
         safe_messages = self._safe_messages(messages)
         use_required_tool = should_check_cluster(safe_messages[-1]["content"])
         model_messages = self._model_messages(safe_messages, memories)
+        stream_started_at: float | None = None
+        time_to_first_content_ms: float | None = None
+
+        def record_first_content() -> None:
+            nonlocal time_to_first_content_ms
+            if time_to_first_content_ms is None and stream_started_at is not None:
+                time_to_first_content_ms = round((time.perf_counter() - stream_started_at) * 1000, 1)
 
         def stream_text(
             request_messages: list[dict[str, Any]],
@@ -178,13 +186,17 @@ class AgentRuntimeV1:
                 if not isinstance(chunk, str):
                     raise RuntimeError("The provider returned an invalid stream chunk.")
                 if chunk:
+                    record_first_content()
                     generated.append(chunk)
                     yield {"event": "delta", "text": chunk}
             if not "".join(generated).strip():
                 raise RuntimeError("The model returned no text.")
 
         def generate() -> Iterator[dict[str, Any]]:
+            nonlocal stream_started_at
+            stream_started_at = time.perf_counter()
             tool_events = []
+
             if use_required_tool:
                 first_message = self._complete(model_messages, tool_choice="required")
                 tool_calls = first_message.get("tool_calls") or []
@@ -192,6 +204,7 @@ class AgentRuntimeV1:
                     content = first_message.get("content") or ""
                     if not isinstance(content, str) or not content.strip():
                         raise RuntimeError("The model returned no text and did not call the tool.")
+                    record_first_content()
                     yield {"event": "delta", "text": content}
                 else:
                     model_messages.append(first_message)
@@ -226,6 +239,7 @@ class AgentRuntimeV1:
                     "tool_calls": len(tool_events),
                     "answer_nonempty": True,
                     "streaming": True,
+                    "time_to_first_content_ms": time_to_first_content_ms,
                 }
             )
 

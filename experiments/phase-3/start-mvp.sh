@@ -164,9 +164,13 @@ write_summary() {
   local exit_code="$1" worker count model version serial port index=0
   local model1="unknown" model2="unknown" model3="unknown"
   local count1=0 count2=0 count3=0 chats=0 tool_calls=0
+  local stream_ttfc_ms="not recorded" stream_event
   [[ -f "$RUN_DIR/chat-events.jsonl" ]] && chats="$(wc -l < "$RUN_DIR/chat-events.jsonl" | tr -d ' ')"
   if [[ -f "$RUN_DIR/chat-events.jsonl" ]]; then
     tool_calls="$(grep -c '"tool_calls": [1-9]' "$RUN_DIR/chat-events.jsonl" || true)"
+    stream_event="$(grep '"streaming": true' "$RUN_DIR/chat-events.jsonl" | tail -n 1 || true)"
+    stream_ttfc_ms="$(printf '%s\n' "$stream_event" | sed -nE 's/.*"time_to_first_content_ms": ([0-9]+([.][0-9]+)?).*/\1/p')"
+    [[ -n "$stream_ttfc_ms" ]] || stream_ttfc_ms="not recorded"
   fi
   if [[ -f "$ACTIVE_FILE" ]]; then
     while IFS='|' read -r serial model version port; do
@@ -250,6 +254,7 @@ write_summary() {
     printf 'GRAPH_RECOMPUTE operations in cumulative worker logs: %s, %s, %s\n' "$count1" "$count2" "$count3"
     printf 'Server startup until ready: %s s\n' "$MODEL_READY_SECONDS"
     printf 'Last request: prompt %s s; total %s s; generation %s tokens/s\n' "$prompt_s" "$request_s" "$speed"
+    printf 'Last streamed response, runtime-observed time to first content: %s ms\n' "$stream_ttfc_ms"
     printf 'Model weights: RPC0 %s MiB, RPC1 %s MiB, RPC2 %s MiB; Mac %s MiB\n' "$weights1" "$weights2" "$weights3" "$host"
     printf 'Raw technical logs: %s\n' "$RUN_DIR"
   } > "$RUN_DIR/summary-en-us.log"

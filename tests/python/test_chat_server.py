@@ -137,7 +137,8 @@ class ChatBehaviorTests(unittest.TestCase):
         events = []
         runtime = AgentRuntimeV1(provider, lambda: {}, events.append, "fake")
 
-        result = list(runtime.chat_stream(self.messages))
+        with patch("agent_runtime.runtime_v1.time.perf_counter", side_effect=[10.0, 10.125]):
+            result = list(runtime.chat_stream(self.messages))
 
         self.assertEqual(result, [
             {"event": "delta", "text": "Primeira "},
@@ -145,6 +146,7 @@ class ChatBehaviorTests(unittest.TestCase):
         ])
         self.assertEqual(provider.requests[0].tool_choice, "auto")
         self.assertEqual(events[0]["streaming"], True)
+        self.assertEqual(events[0]["time_to_first_content_ms"], 125.0)
 
     def test_streaming_chat_includes_saved_memories(self):
         provider = FakeChatProvider([], chunks=["Short response."])
@@ -182,6 +184,16 @@ class ChatBehaviorTests(unittest.TestCase):
         self.assertEqual(next(stream), {"event": "delta", "text": "parcial"})
         with self.assertRaisesRegex(RuntimeError, "stream caiu"):
             next(stream)
+
+    def test_streaming_failure_before_first_content_does_not_record_a_ttfc(self):
+        provider = FakeChatProvider([], stream_error=RuntimeError("stream unavailable"))
+        events = []
+        runtime = AgentRuntimeV1(provider, lambda: {}, events.append, "fake")
+
+        with self.assertRaisesRegex(RuntimeError, "stream unavailable"):
+            list(runtime.chat_stream(self.messages))
+
+        self.assertEqual(events, [])
 
 
 class LocalHttpTests(unittest.TestCase):
