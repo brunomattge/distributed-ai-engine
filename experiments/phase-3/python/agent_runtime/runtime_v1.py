@@ -171,6 +171,14 @@ class AgentRuntimeV1:
             nonlocal time_to_first_content_ms
             if time_to_first_content_ms is None and stream_started_at is not None:
                 time_to_first_content_ms = round((time.perf_counter() - stream_started_at) * 1000, 1)
+                self._event_sink(
+                    {
+                        "event": "chat_first_content",
+                        "model": self._model_id,
+                        "streaming": True,
+                        "time_to_first_content_ms": time_to_first_content_ms,
+                    }
+                )
 
         def stream_text(
             request_messages: list[dict[str, Any]],

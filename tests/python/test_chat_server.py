@@ -3,6 +3,8 @@ import sys
 import threading
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from urllib.error import HTTPError, URLError
 from http.server import HTTPServer
 from pathlib import Path
@@ -145,8 +147,55 @@ class ChatBehaviorTests(unittest.TestCase):
             {"event": "delta", "text": "segunda."},
         ])
         self.assertEqual(provider.requests[0].tool_choice, "auto")
-        self.assertEqual(events[0]["streaming"], True)
-        self.assertEqual(events[0]["time_to_first_content_ms"], 125.0)
+        self.assertEqual(events[0], {
+            "event": "chat_first_content",
+            "model": "fake",
+            "streaming": True,
+            "time_to_first_content_ms": 125.0,
+        })
+        self.assertEqual(events[-1]["event"], "chat_response")
+        self.assertEqual(events[-1]["time_to_first_content_ms"], 125.0)
+
+    def test_first_content_is_reported_before_stream_completion(self):
+        provider = FakeChatProvider([], chunks=["First", " second"])
+        events = []
+        runtime = AgentRuntimeV1(provider, lambda: {}, events.append, "fake")
+        stream = runtime.chat_stream(self.messages)
+
+        with patch("agent_runtime.runtime_v1.time.perf_counter", side_effect=[4.0, 4.08]):
+            self.assertEqual(next(stream), {"event": "delta", "text": "First"})
+
+        self.assertEqual(events[0]["event"], "chat_first_content")
+        self.assertEqual(events[0]["time_to_first_content_ms"], 80.0)
+
+    def test_first_content_event_is_written_to_terminal_and_event_log(self):
+        event = {
+            "event": "chat_first_content",
+            "model": "fake",
+            "streaming": True,
+            "time_to_first_content_ms": 80.0,
+        }
+        output = StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            event_path = Path(directory) / "events.jsonl"
+            with patch.object(chat_server, "EVENT_LOG", event_path), redirect_stdout(output):
+                chat_server.append_event(event)
+
+            logged = json.loads(event_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(logged["event"], "chat_first_content")
+        self.assertEqual(logged["time_to_first_content_ms"], 80.0)
+        self.assertIn("[chat-api] first_content model=fake time_to_first_content_ms=80.0", output.getvalue())
+
+    def test_event_log_write_failure_does_not_raise(self):
+        event = {"event": "chat_first_content", "model": "fake", "time_to_first_content_ms": 80.0}
+        output = StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(chat_server, "EVENT_LOG", Path(directory)), redirect_stdout(output):
+                chat_server.append_event(event)
+
+        self.assertIn("[chat-api] event_log_write_failed", output.getvalue())
+        self.assertIn("[chat-api] first_content model=fake time_to_first_content_ms=80.0", output.getvalue())
 
     def test_streaming_chat_includes_saved_memories(self):
         provider = FakeChatProvider([], chunks=["Short response."])

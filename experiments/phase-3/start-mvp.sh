@@ -165,10 +165,10 @@ write_summary() {
   local model1="unknown" model2="unknown" model3="unknown"
   local count1=0 count2=0 count3=0 chats=0 tool_calls=0
   local stream_ttfc_ms="not recorded" stream_event
-  [[ -f "$RUN_DIR/chat-events.jsonl" ]] && chats="$(wc -l < "$RUN_DIR/chat-events.jsonl" | tr -d ' ')"
+  [[ -f "$RUN_DIR/chat-events.jsonl" ]] && chats="$(grep -c '"event": "chat_response"' "$RUN_DIR/chat-events.jsonl" || true)"
   if [[ -f "$RUN_DIR/chat-events.jsonl" ]]; then
     tool_calls="$(grep -c '"tool_calls": [1-9]' "$RUN_DIR/chat-events.jsonl" || true)"
-    stream_event="$(grep '"streaming": true' "$RUN_DIR/chat-events.jsonl" | tail -n 1 || true)"
+    stream_event="$(grep '"event": "chat_response".*"streaming": true' "$RUN_DIR/chat-events.jsonl" | tail -n 1 || true)"
     stream_ttfc_ms="$(printf '%s\n' "$stream_event" | sed -nE 's/.*"time_to_first_content_ms": ([0-9]+([.][0-9]+)?).*/\1/p')"
     [[ -n "$stream_ttfc_ms" ]] || stream_ttfc_ms="not recorded"
   fi

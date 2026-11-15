@@ -93,7 +93,7 @@ English run summary records the selected RPC count and each worker's graph
 activity. This is an experiment control, not a scheduler or a claim that a
 single-worker run is distributed across the whole cluster.
 
-Open http://127.0.0.1:8000 in a browser. Ctrl+C stops the chat API and model server and stops the workers started by the launcher. The session writes raw coordinator and worker logs plus a separate English summary with startup and request timings, worker graph counts, weight allocation, and runtime-observed time to first streamed content. This latency starts when the Python chat runtime begins processing the stream and includes any tool round trip; it is not a model-only TTFT measurement.
+Open http://127.0.0.1:8000 in a browser. Ctrl+C stops the chat API and model server and stops the workers started by the launcher. When the first streamed content arrives, the Terminal prints its runtime-observed latency in English and the event is appended to `chat-events.jsonl`. The session summary records completed response count, startup and request timings, worker graph counts, weight allocation, and the last streamed response's time to first content. This latency starts when the Python chat runtime begins processing the stream and includes any tool round trip; it is not a model-only TTFT measurement.
 
 ### Supervised RPC recovery
 

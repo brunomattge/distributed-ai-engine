@@ -93,10 +93,20 @@ def query_cluster_status() -> dict:
 
 
 def append_event(event: dict) -> None:
-    EVENT_LOG.parent.mkdir(parents=True, exist_ok=True)
-    with EVENT_LOG.open("a", encoding="utf-8") as stream:
-        entry = {"timestamp": int(time.time()), **event}
-        stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    try:
+        EVENT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with EVENT_LOG.open("a", encoding="utf-8") as stream:
+            entry = {"timestamp": int(time.time()), **event}
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        print("[chat-api] event_log_write_failed", flush=True)
+    if event.get("event") == "chat_first_content":
+        print(
+            "[chat-api] first_content "
+            f"model={event.get('model', 'unknown')} "
+            f"time_to_first_content_ms={event.get('time_to_first_content_ms', 'not recorded')}",
+            flush=True,
+        )
 
 
 def create_runtime(provider=None) -> AgentRuntimeV1:
