@@ -34,6 +34,8 @@ Run these commands from this directory in one Mac Terminal window:
 
 Press Ctrl+C to leave watch; workers remain active until stop is run. An optional sample count makes a bounded run, for example watch 2 3 checks the cluster three times at two-second intervals. Each session writes cluster.log, status.log, and (after stopping) worker-1.log through worker-3.log under a timestamped directory in results/.
 
+The status log identifies devices with SHA-256-derived `adb-` node IDs and does not write raw ADB serials. The ignored `.runtime/active.tsv` file keeps serials locally because the controller needs them to address USB devices.
+
 The Android worker binary is reused from ../phase-0/build-android/bin/ggml-rpc-server. ANDROID_ADB can override the default macOS SDK path.
 
 `clusterctl.sh status` proves only that a TCP connection to each forwarded port can be established. It does not perform an RPC HELLO or prove that a model is loaded. The dashboard separately reports ADB heartbeat and process state. A recurring dashboard TCP probe is intentionally not used: the llama.cpp RPC server handles a long-lived coordinator connection in its accept loop, so a raw TCP connect can enter the listen backlog without validating protocol service.

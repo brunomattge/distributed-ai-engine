@@ -71,3 +71,15 @@ Start a healthy three-phone USB cluster, then run:
 By default, the script runs worker counts 1, 2, and 3 sequentially with the same model, prompt, context, and token limit. Set `BENCHMARK_WORKER_COUNTS=3,2,1` to run the higher-capacity case first. It stops and restarts all RPC servers between configurations so a failed/OOM worker cannot invalidate the next case. It records original coordinator and phone logs under the active Phase 1 session's `benchmark-*` directory and writes `summary-en-us.log`. Start model and worker monitoring with `../phase-1/clusterctl.sh` as usual; stop with Ctrl+C only if you need to cancel an in-progress model load or inference.
 
 The corrected harness completed the comparison and repeat described above. One-worker failure, both two-worker successes, and both three-worker successes are preserved. More repeat trials, live RAM/temperature, time-to-first-token, and the exact three-A07 target remain open. Wi-Fi transport is deferred by owner.
+
+### Repeated fast-profile worker-count sweep — 2026-11-15
+
+Two samples per worker count used the same Qwen2.5 0.5B Q4_K_M GGUF, prompt (`Reply with exactly: OK.`), 512-token context, and 32-token generation limit over USB. The second pass reversed the order (1, 2, 3, then 3, 2, 1). Hardware was two Galaxy A07s and one Galaxy A06, Android 16. The model SHA-256 was `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db`; llama.cpp was version `1.0.0-dev`, source commit `9183a552e5fdcbdb5243f187f3a63204eca7dba9`.
+
+| Workers | Results | GRAPH_RECOMPUTE per selected worker | RPC model weights | Load (run 1 / run 2) | Prompt eval (run 1 / run 2) | Generation (run 1 / run 2) | Wall time (run 1 / run 2) |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: |
+| 1 | Passed twice | 1 each | 373 MiB on A07 | 19.84 / 19.81 s | 0.65 / 0.66 s | 0.43 / 0.43 s (4.62 / 4.62 tokens/s) | 22 / 21 s |
+| 2 | Passed twice | 1 each | 129 MiB + 244 MiB on A07s | 15.66 / 15.66 s | 0.72 / 0.68 s | 0.46 / 0.56 s (4.37 / 3.59 tokens/s) | 18 / 17 s |
+| 3 | Passed twice | 1 each | 90 MiB + 78 MiB on A07s, 205 MiB on A06 | 18.13 / 18.14 s | 0.73 / 0.74 s | 0.50 / 0.42 s (3.97 / 4.76 tokens/s) | 20 / 21 s |
+
+The Mac reported 0 MiB of model weights in all six runs. This confirms selected-worker participation for this small model and prompt; it does not establish a performance benefit from additional workers. Two samples per configuration are exploratory, the output is very short, and time-to-first-token, device RAM and temperature were not measured. The strict three-A07 target remains unverified. The English summary and raw coordinator/worker logs are local artifacts excluded from Git.

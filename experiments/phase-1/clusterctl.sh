@@ -56,6 +56,13 @@ friendly_model() {
   esac
 }
 
+safe_node_id() {
+  local serial="$1"
+  local digest
+  digest="$(printf '%s' "$serial" | shasum -a 256 | awk '{ print substr($1, 1, 16) }')"
+  printf 'adb-%s' "$digest"
+}
+
 start_cluster() {
   require_tools
   [[ -x "$WORKER_BIN" ]] || fail "Worker Android not found: $WORKER_BIN"
@@ -66,7 +73,6 @@ start_cluster() {
     [[ -n "$serial" ]] && serials+=("$serial")
   done < <("$ADB" devices | awk 'NR > 1 && $2 == "device" { print $1 }')
   if [[ ${#serials[@]} -ne 3 ]]; then
-    "$ADB" devices -l
     fail "Expected 3 authorized phones over USB; found ${#serials[@]}."
   fi
 
@@ -78,7 +84,7 @@ start_cluster() {
     model=$("$ADB" -s "$serial" shell getprop ro.product.model | tr -d '\r')
     version=$("$ADB" -s "$serial" shell getprop ro.build.version.release | tr -d '\r')
     running=$("$ADB" -s "$serial" shell 'pidof ggml-rpc-server' | tr -d '\r' || true)
-    [[ -z "$running" ]] || fail "$serial already has an active ggml-rpc-server. Stop the existing session before starting another."
+    [[ -z "$running" ]] || fail "Worker $((i + 1)) already has an active ggml-rpc-server. Stop the existing session before starting another."
     models+=("$model")
     android_versions+=("$version")
   done
@@ -98,7 +104,7 @@ start_cluster() {
     serial="${serials[$i]}"
     log "Worker $((i + 1)): copying and starting ${models[$i]} (Android ${android_versions[$i]})"
     if ! "$ADB" -s "$serial" push "$WORKER_BIN" /data/local/tmp/ggml-rpc-server >/dev/null; then
-      log "Failed to copy the worker to $serial; cleaning up the partial startup."
+      log "Failed to copy the worker to Worker $((i + 1)); cleaning up the partial startup."
       stop_cluster
       exit 1
     fi
@@ -164,8 +170,8 @@ status_once() {
     fi
     printf 'Worker %s — %s (%s): ADB %s | process %s | TCP RPC %s (port %s)\n' \
       "$worker" "$(friendly_model "$model")" "$model" "$state" "$process_state" "$rpc_state" "$port"
-    printf '%s | worker=%s | serial=%s | model=%s | adb=%s | process=%s | rpc_tcp=%s | port=%s\n' \
-      "$timestamp" "$worker" "$serial" "$model" "$state" "$process_state" "$rpc_state" "$port" >> "$RUN_DIR/status.log"
+    printf '%s | worker=%s | node_id=%s | model=%s | adb=%s | process=%s | rpc_tcp=%s | port=%s\n' \
+      "$timestamp" "$worker" "$(safe_node_id "$serial")" "$model" "$state" "$process_state" "$rpc_state" "$port" >> "$RUN_DIR/status.log"
   done < "$ACTIVE_FILE"
 
   if [[ "$all_online" -eq 1 && "$worker" -eq 3 ]]; then
