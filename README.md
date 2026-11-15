@@ -1,4 +1,4 @@
-# Distributed AI Engine (working repository: `distributed-ai-agent`)
+# Distributed AI Engine
 
 An open-source distributed AI inference platform for heterogeneous devices. The existing chatbot is its first application; RAG and AI agents are optional applications built on the engine.
 
