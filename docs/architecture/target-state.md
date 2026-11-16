@@ -53,7 +53,7 @@ The initial scheduler can be a small deterministic placement policy. Multi-clust
 
 ## Progressive platform support
 
-Android USB/ADB is the current experimental path and the only current hardware priority. The next transport target is authenticated LAN connectivity, but it remains deferred until the current owner-approved USB baseline and security boundary are stable. Other CPU operating systems/hardware follow when available for validation; GPU hosts are last. All require a real build/run test or a faithful, explicitly labeled simulator. The adapter boundary is intended to make those additions possible, not to imply support today.
+Android devices over USB/ADB are the MVP hardware target; no specific manufacturer or model is required. The worker binary, Android ABI, available memory, and llama.cpp backend must still be compatible, and support claims must match actual build/run evidence. The next transport target is authenticated LAN connectivity, but it remains deferred until the USB baseline and security boundary are stable. Other CPU operating systems/hardware follow when available for validation; GPU hosts are a later platform milestone, after the Android MVP. All require a real build/run test or a faithful, explicitly labeled simulator. The adapter boundary is intended to make those additions possible, not to imply support today.
 
 ## Security, failure behavior, observability
 

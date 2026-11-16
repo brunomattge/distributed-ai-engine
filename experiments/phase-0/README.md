@@ -1,6 +1,6 @@
 # Phase 0: distributed inference feasibility
 
-This directory contains the smallest repeatable experiment for determining whether three Galaxy A07 phones can participate in one `llama.cpp` inference. It does not implement the application, cluster control plane, or agent.
+This directory contains the smallest repeatable experiment for determining whether compatible Android phones can participate in one `llama.cpp` inference. It does not implement the application, cluster control plane, or agent.
 
 ## Objective
 
@@ -78,7 +78,7 @@ The runner writes the coordinator log to stdout/stderr. Capture it with shell re
 
 Status: **distributed inference demonstrated over USB**. Three Android RPC workers started, and one `llama-completion` process generated a response from the same Qwen2.5-0.5B GGUF while distributing model layers and graph recomputation across all three remote workers. The coordinator log shows `RPC0`, `RPC1`, and `RPC2`, records tensor transfers and graph execution, and reports 0 MiB of model weights on the Mac host. In the guided run, each worker log contains tensor operations and 24 `GRAPH_RECOMPUTE` requests; the coordinator exited with code 0.
 
-- Phones: two Galaxy A07 (`SM-A075M`) and one Galaxy A06 (`SM-A065M`), all Android 16. The third phone was accepted for this feasibility run; a run on three A07s is still outstanding.
+- Phones: two Galaxy A07 (`SM-A075M`) and one Galaxy A06 (`SM-A065M`), all Android 16. No exact Samsung model is an MVP requirement; these are the devices used for this run.
 - Transport: USB ADB forwarding from Mac ports 50052, 50053, and 50054 to port 50052 on each phone. Direct Wi-Fi pairing/traffic remains unresolved on the current router.
 - Model: `qwen2.5-0.5b-instruct-q4_k_m.gguf`, Q4_K_M, 462.96 MiB; context 512; prompt “In one sentence, explain what a distributed system is.” The guided run generated 18 tokens and returned a non-empty answer.
 - Android `/proc/meminfo` reported about 1.16–1.23 GiB `MemAvailable` per phone before the run. RPC worker model allocations were about 90, 78, and 205 MiB; the Mac memory breakdown reports zero model MiB on Host (about 7 MiB host compute workspace).
@@ -94,9 +94,9 @@ The Qwen2.5 7B Instruct Q3_K_M candidate also completed a real distributed infer
 - Performance: model load 156.91 s; prompt processing 10.998 s for 19 tokens (1.73 tokens/s); generation 26.72 s for 31 tokens (1.16 tokens/s); request total 37.75 s after model load.
 - The run produced a local `summary-en-us.log` and raw coordinator/worker logs. These device-specific run artifacts are excluded from Git; the measured outcome and limitations are recorded in this guide.
 
-This establishes that the current 7B Q3_K_M candidate can load and compute across the three available phones. It does not establish that this is the absolute largest viable model or that three A07s and Wi-Fi transport work; those checks remain open.
+This establishes that the current 7B Q3_K_M candidate can load and compute across the three available Android phones. It does not establish that this is the absolute largest viable model, that other Android ABIs/backends are compatible, or that Wi-Fi transport works.
 
-The core Phase 0 proof is demonstrated on the current devices. Phases 1–3 have since added cluster lifecycle, distributed chat, and one read-only status tool. The exact three-A07 hardware target and direct Wi-Fi transport remain open checks.
+The core Phase 0 proof is demonstrated on the current devices. Phases 1–3 have since added cluster lifecycle, distributed chat, and one read-only status tool. Compatibility with other Android ABIs/backends and direct Wi-Fi transport remain open checks; neither is required to use a specific Galaxy model for the MVP.
 
 ## Alternatives if upstream RPC fails
 

@@ -10,7 +10,7 @@ The product and architecture reference is [Distributed AI Engine — Product Vis
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Single-model inference distributed across Android RPC workers | **Experimental / demonstrated** | One GGUF was measured over USB on two Galaxy A07s and one Galaxy A06; three A07s and Wi-Fi remain unverified/deferred |
+| Single-model inference distributed across Android RPC workers | **Experimental / demonstrated** | One GGUF was measured over USB on two Galaxy A07s and one Galaxy A06; other Android models and worker ABIs still need compatibility runs; Wi-Fi is deferred |
 | Cluster dashboard and USB device monitoring | **Implemented locally** | ADB liveness, telemetry, and observed RPC-process state; neither online nor process-running means model inference-ready |
 | Chat application with streaming | **Implemented locally** | Angular chat through the local platform/runtime and llama.cpp path |
 | Conversation history and explicit memory notes | **Implemented locally** | Existing chatbot application features, not engine state |
@@ -38,7 +38,7 @@ Hardware will be validated progressively: the available Android phones come firs
 
 The current local prototype uses a small Python API and browser UI to validate chat and one read-only cluster-status tool. It starts one Qwen2.5 7B Q3_K_M model through llama.cpp and distributes its weights and graph work across USB-connected Android workers.
 
-**Validated hardware:** macOS, two Samsung Galaxy A07s and one Galaxy A06 (Android 16), USB ADB. The three phones each performed graph work and held model weights; the Mac held 0 MiB of model weights. The required target of three A07s remains unverified. Wi-Fi transport tests are deferred by the owner; current inference experiments use USB.
+**Validated hardware:** macOS, two Samsung Galaxy A07s and one Galaxy A06 (Android 16), USB ADB. The three phones each performed graph work and held model weights; the Mac held 0 MiB of model weights. The MVP does not require a particular Android manufacturer or model; inference still requires a compatible Android ABI and llama.cpp worker build. Wi-Fi transport tests are deferred; current inference experiments use USB.
 
 Inference is experimental and slow on this setup: model startup takes about 160 seconds, and generation measured around 1 token/s. Keep RPC on USB or a trusted isolated LAN. The RPC protocol has no authentication and must not be exposed to the internet.
 
@@ -85,7 +85,7 @@ dotnet build DistributedAI.slnx
 
 Open [http://127.0.0.1:4200/cluster](http://127.0.0.1:4200/cluster) for the cluster overview or [http://127.0.0.1:4200/chat](http://127.0.0.1:4200/chat) for the agent chat. The root URL redirects to the cluster overview. Dashboard simulator data is labeled and does not represent phone measurements. Press Ctrl+C to stop all three processes.
 
-For live ADB telemetry instead of simulated nodes, connect supported Samsung devices over USB and run `./tools/run-dashboard.sh adb`. The bridge reads Android `/proc/stat`, `/proc/meminfo`, and `dumpsys thermalservice`, then sends heartbeats to the loopback API. When a successful ADB scan no longer lists a phone, the bridge immediately tells the API; the six-second heartbeat timeout remains as a fallback. It hashes ADB serials for stable local node IDs, excludes unsupported models, and never logs raw serials. Current connected hardware is two Galaxy A07s plus one Galaxy A06; that is a useful physical test, but it does not satisfy the three-A07 target. The “ADB collection” metric is command collection time, not Wi-Fi or inference RPC latency.
+For live ADB telemetry instead of simulated nodes, connect three authorized Android devices over USB and run `./tools/run-dashboard.sh adb`. The bridge discovers ADB-authorized Android models without a Samsung SKU allowlist, reads Android `/proc/stat` and `/proc/meminfo`, and reads surface temperature when that sensor is available. It sends heartbeats to the loopback API. When a successful ADB scan no longer lists a device, the bridge immediately tells the API; the six-second heartbeat timeout remains as a fallback. It hashes ADB serials for stable local node IDs and never logs raw serials. The current inference cohort is two Galaxy A07s plus one Galaxy A06. ADB discovery is model-agnostic, but inference support still depends on worker ABI/backend compatibility. The “ADB collection” metric is command collection time, not Wi-Fi or inference RPC latency.
 
 ### Local PostgreSQL for conversation persistence
 

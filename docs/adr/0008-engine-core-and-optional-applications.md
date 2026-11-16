@@ -26,5 +26,5 @@ The roadmap previously placed RAG inside the initial agent MVP. That creates a p
 - The roadmap prioritizes verified distributed inference, API boundaries, node readiness, lifecycle, and trustworthy observability before optional RAG/agent examples.
 - Existing user-facing chatbot functionality remains a regression requirement.
 - RAG may still use PostgreSQL + pgvector as an optional app implementation, but the engine can run without either.
-- The current USB/RPC proof remains experimental and hardware-specific. It does not imply three-A07, Wi-Fi, arbitrary-device, multi-cluster, or fault-tolerant support.
+- The current USB/RPC proof remains experimental and validated only on the recorded Android cohort. It does not imply compatibility with every Android ABI/backend, Wi-Fi, other hardware platforms, multi-cluster, or fault-tolerant continuation.
 - New API contracts must distinguish one model partitioned across nodes from independent replicas processing separate requests.

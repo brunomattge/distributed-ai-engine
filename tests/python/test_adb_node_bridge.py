@@ -22,21 +22,28 @@ from adb_node_bridge import (  # noqa: E402
 
 
 class AdbNodeBridgeTests(unittest.TestCase):
-    def test_device_discovery_selects_supported_authorized_models_only(self):
+    def test_device_discovery_accepts_authorized_android_models_without_a_sku_allowlist(self):
         devices = parse_adb_devices(
             """List of devices attached
 serial-a device product:device model:SM_A075M transport_id:1
 serial-b device product:device model:SM_A075M transport_id:2
 serial-c device product:device model:SM_A065M transport_id:3
 serial-other device product:device model:SM_G998B transport_id:4
+serial-pixel device product:oriole model:Pixel_6 transport_id:5
 serial-locked unauthorized usb:1-5
 """
         )
 
-        self.assertEqual(3, len(devices))
-        self.assertCountEqual(["SM-A075M", "SM-A075M", "SM-A065M"], [device.model for device in devices])
+        self.assertEqual(5, len(devices))
+        self.assertCountEqual(
+            ["SM-A075M", "SM-A075M", "SM-A065M", "SM-G998B", "Pixel-6"],
+            [device.model for device in devices],
+        )
         self.assertTrue(all(device.node_id.startswith("adb-") for device in devices))
         self.assertTrue(all("serial-" not in device.node_id for device in devices))
+        pixel = next(device for device in devices if device.model == "Pixel-6")
+        self.assertEqual("Android device (Pixel 6)", pixel.hardware_model)
+        self.assertFalse(any(device.serial == "serial-locked" for device in devices))
 
     def test_node_id_is_stable_for_same_serial(self):
         self.assertEqual(stable_node_id("sample-device"), stable_node_id("sample-device"))

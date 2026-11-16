@@ -11,7 +11,7 @@ Start and monitor one llama.cpp RPC worker on each of three Android phones, with
 - Show worker connectivity, process state, and RPC endpoint state in a live terminal monitor.
 - Preserve raw worker logs as produced by the RPC server; collect them without translating their contents.
 - Use USB only. Wi-Fi transport remains unverified.
-- Current devices are two Galaxy A07s and one Galaxy A06. The A06 is documented as a hardware deviation from the final target.
+- Current devices are two Galaxy A07s and one Galaxy A06. They are the available validation cohort; no exact Samsung model is required by the MVP.
 - RPC is a proof-of-concept protocol and must stay on a trusted local connection.
 
 ## Acceptance criteria
@@ -84,13 +84,13 @@ The Angular production build and four component tests passed on 2026-11-14. The 
 
 Run `./tools/run-dashboard.sh adb` from the repository root to use authorized Android devices over USB instead of the simulator. The bridge runs on the Mac and reads the phones; it is a development telemetry adapter, not an Android-resident agent and not part of llama.cpp inference.
 
-- Supported models are Galaxy A07 (SM-A075M) and Galaxy A06 (SM-A065M). Other devices are ignored.
+- The ADB bridge discovers authorized Android devices without a Samsung model allowlist. Inference still requires a compatible Android ABI and worker/backend build.
 - Stable node IDs are derived from a SHA-256 hash of the ADB serial. Raw serials remain in process memory and are neither printed nor written to project files.
 - CPU is calculated from two `/proc/stat` samples 350 ms apart. Available RAM comes from `/proc/meminfo` (`MemAvailable`). Surface temperature comes from the Android `SKIN` sensor in `dumpsys thermalservice`; if unavailable, the dashboard shows no temperature instead of inventing one.
 - The `ADB collection` value is the combined duration of the RAM and thermal ADB queries. It is not Wi-Fi RTT or llama.cpp RPC latency.
 - The bridge discovers devices and sends heartbeats every two seconds. At startup it reconciles existing `adb-` nodes from the API with the current ADB scan; during operation, a successful scan that omits a previously visible phone immediately tells the API to mark it Offline. If the bridge or ADB scan fails, the API's six-second heartbeat timeout remains the fallback. Reconnecting the same phone reuses its hashed ID and the next heartbeat marks it Online.
 
-Validated on 2026-11-14 with four authorized Android devices visible to ADB: the bridge selected two Galaxy A07s and one Galaxy A06, and excluded the fourth unsupported model. All three sent real heartbeats and appeared Online in the Angular dashboard with CPU, available RAM, and surface temperature. Unplugging two USB cables produced two Offline nodes in the API; reconnecting them restored 3/3 Online. Exact transition latency was not separately timed. This remains a hardware deviation from the target of exactly three Galaxy A07s.
+Validated on 2026-11-14 with four authorized Android devices visible to ADB: the bridge selected two Galaxy A07s and one Galaxy A06. At that time, its model allowlist excluded the fourth device; the bridge has since been made model-agnostic. The three selected phones sent real heartbeats and appeared Online in the Angular dashboard with CPU, available RAM, and surface temperature. Unplugging two USB cables produced two Offline nodes in the API; reconnecting them restored 3/3 Online. Exact transition latency was not separately timed. The MVP does not require a cohort of three identical Samsung models.
 
 On this increment, `dotnet build DistributedAI.slnx`, all 18 .NET tests, all 13 Python tests, the Angular production build, and all four Angular component tests passed. The smoke test verified the explicit disconnect and heartbeat recovery endpoints; the Python suite covers startup reconciliation of previously registered ADB nodes.
 

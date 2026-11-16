@@ -48,7 +48,7 @@ The integration run on 2026-11-14 passed using the Qwen2.5 7B Q3_K_M model over 
 - Model load took 156.01 s; prompt processing 13.24 s; generation 1.15 tokens/s; the request took 40.20 s after model load.
 - The run summary and raw coordinator/worker logs are local artifacts excluded from Git. The measured outcome and limitations are recorded here.
 
-The exact three-A07 hardware target remains unverified. The owner deferred Wi-Fi transport; the results below are USB-only. Phase 3 adds the local chat and read-only status tool in its own directory.
+These results validate the available two-A07/one-A06 Android cohort; other Android ABIs/backends remain unvalidated. The owner deferred Wi-Fi transport; the results below are USB-only. Phase 3 adds the local chat and read-only status tool in its own directory.
 
 ### Worker-count comparison — 2026-11-14
 
@@ -70,7 +70,7 @@ Start a healthy three-phone USB cluster, then run:
 
 By default, the script runs worker counts 1, 2, and 3 sequentially with the same model, prompt, context, and token limit. Set `BENCHMARK_WORKER_COUNTS=3,2,1` to run the higher-capacity case first. It stops and restarts all RPC servers between configurations so a failed/OOM worker cannot invalidate the next case. It records original coordinator and phone logs under the active Phase 1 session's `benchmark-*` directory and writes `summary-en-us.log`. Start model and worker monitoring with `../phase-1/clusterctl.sh` as usual; stop with Ctrl+C only if you need to cancel an in-progress model load or inference.
 
-The corrected harness completed the comparison and repeat described above. One-worker failure, both two-worker successes, and both three-worker successes are preserved. More repeat trials, live RAM/temperature, time-to-first-token, and the exact three-A07 target remain open. Wi-Fi transport is deferred by owner.
+The corrected harness completed the comparison and repeat described above. One-worker failure, both two-worker successes, and both three-worker successes are preserved. More repeat trials, live RAM/temperature, and time-to-first-token remain open. Wi-Fi transport is deferred by owner.
 
 ### Repeated fast-profile worker-count sweep — 2026-11-15
 
@@ -82,4 +82,4 @@ Two samples per worker count used the same Qwen2.5 0.5B Q4_K_M GGUF, prompt (`Re
 | 2 | Passed twice | 1 each | 129 MiB + 244 MiB on A07s | 15.66 / 15.66 s | 0.72 / 0.68 s | 0.46 / 0.56 s (4.37 / 3.59 tokens/s) | 18 / 17 s |
 | 3 | Passed twice | 1 each | 90 MiB + 78 MiB on A07s, 205 MiB on A06 | 18.13 / 18.14 s | 0.73 / 0.74 s | 0.50 / 0.42 s (3.97 / 4.76 tokens/s) | 20 / 21 s |
 
-The Mac reported 0 MiB of model weights in all six runs. This confirms selected-worker participation for this small model and prompt; it does not establish a performance benefit from additional workers. Two samples per configuration are exploratory, the output is very short, and time-to-first-token, device RAM and temperature were not measured. The strict three-A07 target remains unverified. The English summary and raw coordinator/worker logs are local artifacts excluded from Git.
+The Mac reported 0 MiB of model weights in all six runs. This confirms selected-worker participation for this small model and prompt; it does not establish a performance benefit from additional workers. Two samples per configuration are exploratory, the output is very short, and time-to-first-token, device RAM and temperature were not measured. Other Android ABI/backend combinations remain unvalidated. The English summary and raw coordinator/worker logs are local artifacts excluded from Git.

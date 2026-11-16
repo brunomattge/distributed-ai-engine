@@ -18,7 +18,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-SUPPORTED_MODELS = {
+KNOWN_MODEL_NAMES = {
     "SM-A075M": "Galaxy A07",
     "SM-A065M": "Galaxy A06",
 }
@@ -47,24 +47,31 @@ def stable_node_id(serial: str) -> str:
 
 
 def parse_adb_devices(output: str) -> list[AndroidDevice]:
-    supported: list[tuple[str, str, str]] = []
+    android_devices: list[tuple[str, str, str]] = []
     for line in output.splitlines()[1:]:
         parts = line.split()
         if len(parts) < 3 or parts[1] != "device":
             continue
 
         model_token = next((part for part in parts[2:] if part.startswith("model:")), "")
-        model = model_token.removeprefix("model:").replace("_", "-")
-        if model not in SUPPORTED_MODELS:
-            continue
+        product_token = next((part for part in parts[2:] if part.startswith("product:")), "")
+        model = (model_token or product_token).split(":", maxsplit=1)[-1].replace("_", "-")
+        model = model or "unknown"
 
         serial = parts[0]
-        supported.append((stable_node_id(serial), serial, model))
+        android_devices.append((stable_node_id(serial), serial, model))
 
-    supported.sort(key=lambda item: item[0])
+    android_devices.sort(key=lambda item: item[0])
     devices: list[AndroidDevice] = []
-    for node_id, serial, model in supported:
-        display_name = SUPPORTED_MODELS[model]
+    for node_id, serial, model in android_devices:
+        display_name = KNOWN_MODEL_NAMES.get(model)
+        if display_name is None:
+            display_name = "Android device" if model == "unknown" else model.replace("-", " ")
+        hardware_model = (
+            f"Samsung {display_name} ({model})"
+            if model in KNOWN_MODEL_NAMES
+            else f"Android device ({display_name})"
+        )
         devices.append(
             AndroidDevice(
                 serial=serial,
@@ -72,7 +79,7 @@ def parse_adb_devices(output: str) -> list[AndroidDevice]:
                 display_name=display_name,
                 node_id=node_id,
                 name=f"{display_name} · ADB {node_id[-6:].upper()}",
-                hardware_model=f"Samsung {display_name} ({model})",
+                hardware_model=hardware_model,
             )
         )
     return devices

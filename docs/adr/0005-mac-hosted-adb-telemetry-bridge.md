@@ -17,4 +17,4 @@ Add a small Python process on the Mac that discovers only supported Galaxy A07/A
 - A transient USB renegotiation can briefly produce Offline until the next heartbeat. The five-second UI poll bounds how quickly the dashboard reflects state changes; API and UI tests cover both Offline and reconnect transitions.
 - `ADB collection` is the combined duration of the two telemetry shell commands. It is not Wi-Fi RTT or inference RPC latency.
 - This adapter depends on the Mac and an authorized ADB connection. It is not a production Android agent, a remote cluster protocol, or evidence that a phone participated in model inference.
-- Unsupported models are ignored. Current validation uses two Galaxy A07s plus one Galaxy A06, so acceptance for exactly three A07s remains open.
+- The original implementation filtered to Galaxy A07/A06. That model allowlist has since been removed; see [ADR 0016](0016-model-agnostic-android-discovery.md). Current inference validation still uses two Galaxy A07s plus one Galaxy A06.

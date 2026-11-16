@@ -2,12 +2,12 @@
 
 **Status:** Architecture proposal / RFC 001
 **Origin:** Existing `distributed-ai-agent` project
-**Target:** Distributed AI Engine for connected hardware, with optional RAG and agent applications
+**Target:** Distributed AI Engine for connected hardware, starting with compatible Android phones; GPU support is a later platform evolution
 **Document date:** 2026-11-14
 
 ## 1. Executive Summary
 
-We have a working prototype currently called **Distributed AI Agent**. It offers a chatbot and reports three Samsung Galaxy A07 smartphones (4 GB physical RAM each) participating when a prompt is submitted. The dashboard also shows node online/offline status when USB connections are interrupted.
+We have a working prototype currently called **Distributed AI Agent**. It offers a chatbot and has demonstrated one model distributed across three Android phones: two Samsung Galaxy A07s and one Galaxy A06. The dashboard also shows node online/offline status when USB connections are interrupted.
 
 We want to evolve this existing project into **Distributed AI Engine**, a reusable, extensible platform for orchestrating compute and AI inference across connected hardware with different capabilities. The chatbot remains the first client of the engine. RAG pipelines and agent-based applications are optional clients, not dependencies or core identity of the platform. **LLM inference is a core product capability**; RAG and agents are planned extensions.
 
@@ -39,7 +39,7 @@ The platform should eventually connect Android, Linux, Windows, macOS, ARM singl
 **Reported as working:**
 
 - A chatbot receives prompts and returns generated answers.
-- Three Galaxy A07 devices participate in the request according to the current implementation.
+- Three Android devices participate in one request according to current hardware evidence; the tested cohort is two Galaxy A07s and one Galaxy A06.
 - A dashboard reports connectivity changes when USB cables are disconnected.
 
 **Unknown; investigate in repository and runtime:**
@@ -182,7 +182,7 @@ Each node runs the appropriate native agent/adapter and reports a versioned capa
 
 ```json
 {
-  "nodeId": "galaxy-a07-01",
+  "nodeId": "android-worker-01",
   "platform": "android",
   "architecture": "arm64",
   "totalPhysicalMemoryMb": 4096,
@@ -223,7 +223,7 @@ The scheduler must distinguish workload types and routing policies. Avoid confla
 7. **Observability:** Time to first token, output tokens/sec, total latency, node CPU/available memory, communication time, queue depth, successful/failed requests; metrics must show which nodes actually executed operations.
 8. **API stability:** Backend-neutral inference API; versioned node capability schemas; a small SDK may follow once contracts stabilize.
 9. **Hardware heterogeneity:** Android ARM CPUs, desktops and GPU hosts may require different backends; don't claim one runtime uniformly supports them all.
-10. **Cost and performance:** Compare one, two and three Galaxy A07 nodes, repeat trials, record model/context/quantization/backend/network and host participation.
+10. **Cost and performance:** Compare one, two and three compatible Android nodes, repeat trials, record their actual models, ABI, model/context/quantization/backend/network and host participation. GPU hosts are a later platform evolution, not an MVP prerequisite.
 
 ## 9. Incremental Roadmap — Not a Big-Bang Rewrite
 
@@ -231,7 +231,7 @@ The scheduler must distinguish workload types and routing policies. Avoid confla
 
 - Read the repository and map its actual components, dependencies and execution flow.
 - Reproduce the current chat request end-to-end.
-- Trace where inference runs and measure participation of each Galaxy.
+- Trace where inference runs and measure participation of each Android node.
 - Establish a reproducible benchmark baseline and record known limitations.
 - Produce one current-state architecture diagram and a risks list.
 
@@ -253,7 +253,7 @@ The scheduler must distinguish workload types and routing policies. Avoid confla
 - Add reconnection behavior and telemetry validation.
 - Add another hardware class only after testing the adapter against actual hardware or a faithful simulation.
 
-**Exit criteria:** An A07 can run with its USB cable disconnected while connected by Wi-Fi, assuming Android process constraints permit; the dashboard distinguishes connected vs inferencing-capable.
+**Exit criteria:** A compatible Android device can run with its USB cable disconnected while connected by Wi-Fi, assuming Android process constraints permit; the dashboard distinguishes connected vs inferencing-capable.
 
 ### Milestone 3 — Scheduler and multi-cluster foundation
 
