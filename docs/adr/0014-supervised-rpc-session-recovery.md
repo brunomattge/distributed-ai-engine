@@ -9,7 +9,7 @@ A USB disconnect can leave the Android RPC processes visible again after reconne
 
 ## Decision
 
-The Phase 3 launcher supervises the llama-server process. When it exits, it publishes a degraded state, waits for exactly three authorized USB devices, stops and starts the RPC workers, and loads a fresh llama-server session. It permits two recovery attempts per launcher run and waits up to ten minutes for the devices. These bounds are configurable through `INFERENCE_MAX_RECOVERIES` and `INFERENCE_PHONE_WAIT_SECONDS`.
+The Phase 3 launcher supervises the llama-server process and polls each selected Android RPC process while the model is serving. If the same worker is missing in two consecutive checks, it stops the coordinator to enter the existing recovery path. Recovery publishes a degraded state, waits for exactly three authorized USB devices, stops and starts the RPC workers, and loads a fresh llama-server session. It permits two recovery attempts per launcher run and waits up to ten minutes for the devices by default. These bounds are configurable through `INFERENCE_MAX_RECOVERIES` and `INFERENCE_PHONE_WAIT_SECONDS`.
 
 The launcher atomically publishes its state and monotonically increasing generation in the local runtime status file. The Python health endpoint exposes these fields. The .NET readiness service latches session failures and keeps chat unavailable until it observes a newer generation report `ready` with all three workers online. Chat and SSE failures mark the session degraded; Angular immediately disables sending and explains the recovery state.
 
@@ -18,6 +18,7 @@ The user must resend a failed request after recovery. The application does not r
 ## Consequences and limits
 
 - This supervises the current fixed three-phone USB launcher; it is not a generic service manager or cross-platform scheduler.
+- Two consecutive missing-process checks reduce sensitivity to one transient ADB probe failure, but do not eliminate false positives or prove RPC request health.
 - If a phone is disconnected, the supervisor waits for all three before replacing workers, avoiding a partial cluster restart.
 - After the configured retry or wait limit is exceeded, the chat remains degraded and the Terminal reports that manual intervention is needed.
 - This is process restart and request retry by the user, not checkpoint-based continuation, transparent failover, or fault-tolerant inference.
@@ -27,4 +28,5 @@ The user must resend a failed request after recovery. The application does not r
 
 - Tests cover degraded-session latching, release only on a newer ready generation, HTTP/SSE failure reporting, chat gating, and status-file parsing.
 - On 2026-11-16, stopping one A07 RPC process through ADB while keeping USB connected caused the gateway to reject chat at 2/3 processes. A subsequent internal runtime request failed the coordinator; supervision restarted all three workers and model server, advanced the generation from 8 to 9, and a fresh chat succeeded. This validates process-failure recovery only.
-- Hardware acceptance must disconnect a phone, observe the clear error/block, reconnect it, verify supervised worker/coordinator restart, and complete a fresh user-submitted chat.
+- On 2026-11-16, a physical USB disconnect on the mixed two-A07/one-A06 cohort drove the gateway to `degraded` at 2/3. The new worker monitor moved the supervisor from generation 14 to `waiting_for_devices` without an inference request. After all three devices returned to ADB, the supervisor restarted the workers and coordinator automatically, reached generation 15 `ready` in about 22 seconds, and a fresh Angular-to-.NET chat succeeded. The retry used a 30-minute device wait; the default ten-minute wait had expired during an earlier attempt. Raw logs are local and excluded from Git.
+- The physical recovery criterion is verified for this mixed cohort. The separate three-Galaxy-A07 hardware target remains open.

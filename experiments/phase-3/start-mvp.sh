@@ -100,6 +100,47 @@ start_model_server() {
   SERVER_PID=$!
 }
 
+missing_rpc_worker() {
+  local serial model version port worker=0 pid
+  while IFS='|' read -r serial model version port; do
+    [[ -n "$serial" ]] || continue
+    worker=$((worker + 1))
+    (( worker <= INFERENCE_WORKER_COUNT )) || break
+    pid="$("$ADB" -s "$serial" shell 'pidof ggml-rpc-server' </dev/null 2>/dev/null | tr -d '\r' || true)"
+    if [[ -z "$pid" ]]; then
+      printf '%s' "$worker"
+      return 0
+    fi
+  done < "$ACTIVE_FILE"
+  return 1
+}
+
+monitor_model_server() {
+  local missing_worker="" current_missing="" consecutive_misses=0
+  while kill -0 "$SERVER_PID" 2>/dev/null; do
+    current_missing="$(missing_rpc_worker || true)"
+    if [[ -n "$current_missing" ]]; then
+      if [[ "$current_missing" == "$missing_worker" ]]; then
+        consecutive_misses=$((consecutive_misses + 1))
+      else
+        missing_worker="$current_missing"
+        consecutive_misses=1
+      fi
+      if (( consecutive_misses >= 2 )); then
+        printf 'RPC worker %s process is missing in two consecutive checks; stopping the coordinator to start supervised recovery.\n' \
+          "$missing_worker"
+        kill -TERM "$SERVER_PID" 2>/dev/null || true
+        break
+      fi
+    else
+      missing_worker=""
+      consecutive_misses=0
+    fi
+    sleep 1
+  done
+  wait "$SERVER_PID" || true
+}
+
 wait_for_model_server() {
   for attempt in $(seq 1 900); do
     if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then
@@ -321,7 +362,7 @@ while true; do
     write_supervisor_status "ready" "Distributed model is ready; ${INFERENCE_WORKER_COUNT}/3 selected RPC workers are used for inference and all three processes are available."
     printf 'Model server ready. Chat UI: http://127.0.0.1:8000\n'
     printf 'Supervision is active. Press Ctrl+C here to stop this session.\n'
-    wait "$SERVER_PID" || true
+    monitor_model_server
   fi
 
   SERVER_PID=""
