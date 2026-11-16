@@ -137,6 +137,39 @@ performance. TTFT was not recorded separately. See the [English comparison
 summary in this guide; raw device logs remain local and are excluded from Git. The selection control is experimental; it is
 not scheduler placement or proof of per-phone model readiness.
 
+### Repeated cold RPC worker-count measurements — 2026-11-16
+
+The worker-count comparison was repeated on the same USB cohort (two Galaxy
+A07s and one Galaxy A06, Android 16) with Qwen2.5 0.5B Q4_K_M. Each setting
+received three identical requests through the local llama.cpp OpenAI-compatible
+streaming endpoint. The request used the same system prompt, status-tool schema,
+user prompt (`Reply with only the word OK.`), sampling settings, and
+`cache_prompt: false`; all nine requests returned HTTP 200 and `OK`. Each input
+contained 218 tokens and generated two tokens.
+
+| Selected RPC workers | Median complete HTTP response | Range | Median llama.cpp total | Model-weight allocation |
+| --- | ---: | ---: | ---: | --- |
+| RPC0 (one Galaxy A07) | 8.057 s | 7.774–8.104 s | 8.052 s | RPC0 373 MiB; Mac 0 MiB |
+| RPC0 + RPC1 (two Galaxy A07s) | 7.997 s | 7.923–8.007 s | 7.991 s | RPC0 129 MiB; RPC1 244 MiB; Mac 0 MiB |
+| RPC0 + RPC1 + RPC2 (two Galaxy A07s and one Galaxy A06) | 8.198 s | 8.177–8.415 s | 8.192 s | RPC0 90 MiB; RPC1 78 MiB; RPC2 205 MiB; Mac 0 MiB |
+
+The coordinator log recorded graph work on every selected RPC worker (one
+`GRAPH_RECOMPUTE` record per selected worker in each session). The three-worker
+configuration was 0.141 s slower than the one-worker configuration by median
+HTTP response time. This small difference is not enough to establish a general
+performance trend; the small 0.5B model and USB transport were used only to
+validate participation and produce a controlled baseline. Phone temperature,
+clock state, and repeated sessions on different days were not measured.
+
+The prompt cache was initially observed to reduce repeated identical requests
+from about 8 s to about 0.4 s. Those cached measurements were excluded from the
+cold comparison. Raw request, coordinator, and worker logs are retained locally
+under `experiments/phase-1/results/worker-count-cold-benchmark-*` and remain
+excluded from Git. The launcher’s per-session chat summary reports `STOPPED`
+for this low-level benchmark because requests went directly to llama.cpp and
+did not pass through the Python chat event logger; success was confirmed from
+the HTTP responses and coordinator/worker logs.
+
 ### Runtime-observed first-content smoke — 2026-11-15
 
 The updated streaming chat path was exercised with the fast Qwen2.5 0.5B Q4_K_M profile and all three USB workers (two Galaxy A07s and one Galaxy A06, Android 16). The prompt was `Reply with exactly: OK.` The response streamed `OK.`; each selected worker logged two `GRAPH_RECOMPUTE` operations. Model weights were allocated as 90 MiB, 78 MiB, and 205 MiB on RPC0/RPC1/RPC2, with 0 MiB on the Mac Host. Model startup took 20 s; prompt evaluation took 8.14 s; generation took 0.55 s at 3.66 tokens/s; total llama.cpp request time was 8.69 s.

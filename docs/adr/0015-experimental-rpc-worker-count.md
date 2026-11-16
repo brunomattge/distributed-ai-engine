@@ -15,11 +15,11 @@ The performance roadmap needs comparable runs of one GGUF with one, two and thre
 
 - This is a repeatable experiment switch, not production placement logic or a public API.
 - The selected prefix follows the current ADB worker order. It is not capability-aware; the mixed 2×A07 + 1×A06 cohort must be reported.
-- One sample per setting cannot establish a performance trend. Repeat runs, temperature/thermal state and TTFT remain to be measured.
+- A small cold sweep with three requests per setting has been recorded, but it does not establish a general performance trend. Thermal state and repeat sessions on other days remain unmeasured.
 - A single selected RPC is a baseline configuration, not evidence that all cluster devices participated.
 
 ## Verification
 
 - Shell syntax check passed; invalid values are rejected before cluster startup.
-- Hardware runs with 1, 2 and 3 selected RPCs each returned `OK` through the existing chat route. Same-request graph logs showed participation on every selected device and 0 MiB of Mac model weights.
-- Raw coordinator, worker, and chat logs are local artifacts excluded from Git. The one-sample-per-setting results and limitations are summarized in the Phase 3 guide.
+- Hardware runs with 1, 2 and 3 selected RPCs each returned `OK`; a three-request cold sweep disabled prompt caching and confirmed graph work on every selected worker, with 0 MiB of Mac model weights.
+- Raw coordinator, worker, and chat logs are local artifacts excluded from Git. The repeated measurements and limitations are summarized in the Phase 3 guide.
