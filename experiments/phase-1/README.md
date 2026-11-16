@@ -108,6 +108,12 @@ Validated on 2026-11-14: all three currently connected phones (two A07s and one 
 
 The later model-readiness investigation evaluated a recurring TCP connect probe against the active RPC forwards and removed it after ADB telemetry calls began timing out. Removing the project forwards restored ADB shell access on all three phones; the launcher then restarted the cluster, and inference plus the Angular chat proxy passed again. The dashboard therefore keeps heartbeat and process observations only; no per-request RPC readiness claim is made.
 
+### Physical unplug/reconnect dashboard observation — 2026-11-16
+
+With the dashboard and three USB RPC workers running (two Galaxy A07s and one Galaxy A06), a high-frequency API observer recorded the node set at 3/3 Online, then 2/3 at `2026-11-16T13:33:22.204Z`, then 3/3 at `2026-11-16T13:34:35.065Z`. The Angular page visibly showed the unplugged A07 as `Offline` with RPC process `Unknown`, and after reconnection showed all three `Online` with RPC processes `Running`.
+
+The first browser snapshot showing `Offline` was captured at `13:33:51.779Z`, 29.575 seconds after the API transition; the first snapshot showing all nodes `Online` was captured at `13:34:52.699Z`, 17.634 seconds after the API returned to 3/3. These are observation times, not exact first-render times. The physical cable action itself was not timestamped, so unplug-to-API and unplug-to-dashboard latency remain unmeasured. Separate stable-state UI samples confirmed that the displayed `Last updated` value advanced every five seconds. No model was loaded and no inference was run in this dashboard-only check. The hardware cohort remains two A07s plus one A06.
+
 Automated validation after this change: 47 .NET tests passed and two database integration tests were skipped; all 9 ADB bridge tests and all 12 Angular tests passed. The live Angular API proxy returned `Online`/`Running` for all three phones.
 
 ## Validation
