@@ -143,6 +143,12 @@ The updated streaming chat path was exercised with the fast Qwen2.5 0.5B Q4_K_M 
 
 The Python runtime observed 8,150.9 ms from starting stream processing until the first non-empty content chunk and printed that value to Terminal and `chat-events.jsonl`. This includes the runtime-to-llama-server request path and is not model-only TTFT. This is one smoke sample; it does not measure per-device RAM/temperature during inference or establish a performance trend. The English session summary and raw coordinator/worker logs are local artifacts excluded from Git.
 
+### Supervised recovery process-failure injection — 2026-11-16
+
+With the same two-A07/one-A06 USB cohort, the `ggml-rpc-server` process on worker 1 was stopped through ADB while the USB device remained connected. The Angular-to-.NET gateway immediately rejected a request with `inference_unavailable` and reported 2/3 active RPC processes. One internal Python request then caused the existing llama-server session to fail; the supervisor logged `degraded`, waited for all three authorized devices, restarted the workers, and loaded a new model-server generation. The status moved from generation 8 to generation 9 and back to `ready` in about 22 seconds. A fresh Angular-to-.NET streamed chat returned `RECOVERED.`.
+
+In the recovered coordinator log, RPC0/RPC1/RPC2 held 90/78/205 MiB of model weights and Host held 0 MiB. Each worker recorded four `GRAPH_RECOMPUTE` operations across the two successful chat requests. The final request observed 8,124.6 ms to first content in the Python runtime; llama.cpp reported 8.12 s prompt processing, 0.94 s generation at 4.27 tokens/s, and 9.06 s total. This is a controlled RPC-process failure, not a physical USB disconnect; the cable-disconnect recovery criterion remains open. Local run logs are excluded from Git.
+
 ### .NET gateway regression after inference-contract extraction
 
 On 2026-11-14, the Angular chat proxy was exercised through the current .NET API, Python runtime and the same llama.cpp model server/RPC workers. It returned the streamed answer `OK` with HTTP 200. The end-to-end HTTP request took about 5.2 seconds. A separate isolated run of the same four-component path also returned HTTP 200 in 5.63 seconds.

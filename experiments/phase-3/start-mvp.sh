@@ -161,10 +161,17 @@ cleanup() {
 }
 
 write_summary() {
-  local exit_code="$1" worker count model version serial port index=0
+  local exit_code="$1" worker count model version serial port index=0 recovery_index recovery_log coordinator_log
   local model1="unknown" model2="unknown" model3="unknown"
   local count1=0 count2=0 count3=0 chats=0 tool_calls=0
   local stream_ttfc_ms="not recorded" stream_event
+  coordinator_log="$RUN_DIR/coordinator.log"
+  for ((recovery_index = 1; recovery_index <= RECOVERY_COUNT; recovery_index++)); do
+    recovery_log="$RUN_DIR/coordinator-recovery-$recovery_index.log"
+    if [[ -f "$recovery_log" ]] && grep -q 'total time =' "$recovery_log"; then
+      coordinator_log="$recovery_log"
+    fi
+  done
   [[ -f "$RUN_DIR/chat-events.jsonl" ]] && chats="$(grep -c '"event": "chat_response"' "$RUN_DIR/chat-events.jsonl" || true)"
   if [[ -f "$RUN_DIR/chat-events.jsonl" ]]; then
     tool_calls="$(grep -c '"tool_calls": [1-9]' "$RUN_DIR/chat-events.jsonl" || true)"
@@ -190,24 +197,24 @@ write_summary() {
   fi
   local result="INCOMPLETE"
   local speed="not recorded" prompt_s="not recorded" request_s="not recorded" weights1="not recorded" weights2="not recorded" weights3="not recorded" host="not recorded"
-  if [[ -f "$RUN_DIR/coordinator.log" ]]; then
+  if [[ -f "$coordinator_log" ]]; then
     local eval_line prompt_line total_line row
-    eval_line="$(grep 'eval time =' "$RUN_DIR/coordinator.log" | tail -n 1 || true)"
-    prompt_line="$(grep 'prompt eval time =' "$RUN_DIR/coordinator.log" | tail -n 1 || true)"
-    total_line="$(grep 'total time =' "$RUN_DIR/coordinator.log" | tail -n 1 || true)"
+    eval_line="$(grep 'eval time =' "$coordinator_log" | tail -n 1 || true)"
+    prompt_line="$(grep 'prompt eval time =' "$coordinator_log" | tail -n 1 || true)"
+    total_line="$(grep 'total time =' "$coordinator_log" | tail -n 1 || true)"
     speed="$(printf '%s\n' "$eval_line" | sed -nE 's/.*\([[:space:]]*[0-9]+[,.][0-9]+ ms per token,[[:space:]]*([0-9]+[,.][0-9]+) tokens per second\).*/\1/p' | tr ',' '.')"
     prompt_s="$(printf '%s\n' "$prompt_line" | sed -nE 's/.*=[[:space:]]*([0-9]+[,.][0-9]+)[[:space:]]*ms.*/\1/p' | awk 'NF { printf "%.2f", $1 / 1000 }' | tr ',' '.')"
     request_s="$(printf '%s\n' "$total_line" | sed -nE 's/.*=[[:space:]]*([0-9]+[,.][0-9]+)[[:space:]]*ms.*/\1/p' | awk 'NF { printf "%.2f", $1 / 1000 }' | tr ',' '.')"
     [[ -n "$speed" ]] || speed="not recorded"
     [[ -n "$prompt_s" ]] || prompt_s="not recorded"
     [[ -n "$request_s" ]] || request_s="not recorded"
-    row="$(grep 'common_memory_breakdown_print: |   - RPC0' "$RUN_DIR/coordinator.log" | tail -n 1 || true)"
+    row="$(grep 'common_memory_breakdown_print: |   - RPC0' "$coordinator_log" | tail -n 1 || true)"
     weights1="$(printf '%s\n' "$row" | sed -nE 's/.*\([[:space:]]*[0-9]+[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*\+.*/\1/p')"
-    row="$(grep 'common_memory_breakdown_print: |   - RPC1' "$RUN_DIR/coordinator.log" | tail -n 1 || true)"
+    row="$(grep 'common_memory_breakdown_print: |   - RPC1' "$coordinator_log" | tail -n 1 || true)"
     weights2="$(printf '%s\n' "$row" | sed -nE 's/.*\([[:space:]]*[0-9]+[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*\+.*/\1/p')"
-    row="$(grep 'common_memory_breakdown_print: |   - RPC2' "$RUN_DIR/coordinator.log" | tail -n 1 || true)"
+    row="$(grep 'common_memory_breakdown_print: |   - RPC2' "$coordinator_log" | tail -n 1 || true)"
     weights3="$(printf '%s\n' "$row" | sed -nE 's/.*\([[:space:]]*[0-9]+[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*\+.*/\1/p')"
-    row="$(grep 'common_memory_breakdown_print: |   - Host' "$RUN_DIR/coordinator.log" | tail -n 1 || true)"
+    row="$(grep 'common_memory_breakdown_print: |   - Host' "$coordinator_log" | tail -n 1 || true)"
     host="$(printf '%s\n' "$row" | sed -nE 's/.*=[[:space:]]*[0-9]+[[:space:]]*\+[[:space:]]*([0-9]+)[[:space:]]*\+.*/\1/p')"
     [[ -n "$weights1" ]] || weights1="not recorded"
     [[ -n "$weights2" ]] || weights2="not recorded"

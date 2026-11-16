@@ -26,4 +26,5 @@ The user must resend a failed request after recovery. The application does not r
 ## Verification
 
 - Tests cover degraded-session latching, release only on a newer ready generation, HTTP/SSE failure reporting, chat gating, and status-file parsing.
+- On 2026-11-16, stopping one A07 RPC process through ADB while keeping USB connected caused the gateway to reject chat at 2/3 processes. A subsequent internal runtime request failed the coordinator; supervision restarted all three workers and model server, advanced the generation from 8 to 9, and a fresh chat succeeded. This validates process-failure recovery only.
 - Hardware acceptance must disconnect a phone, observe the clear error/block, reconnect it, verify supervised worker/coordinator restart, and complete a fresh user-submitted chat.
