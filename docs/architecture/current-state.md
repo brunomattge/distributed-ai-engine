@@ -37,7 +37,7 @@ The diagram describes the current dashboard plus its intended/current chat integ
 | Area | Present implementation | Current boundary/limitation |
 | --- | --- | --- |
 | Web client | Angular + TypeScript, lazy `/cluster` and `/chat` routes, streaming chat UI, conversation history and explicit memory-note controls | One local SPA; no authenticated user identity |
-| Platform/control plane | ASP.NET Core minimal API; in-memory `NodeRegistry`; chat gateway to Python; conversation and memory endpoints | Heartbeat liveness and ADB-observed RPC process state are separate; no model/backend readiness, generic engine job, or scheduler API |
+| Platform/control plane | ASP.NET Core minimal API; in-memory `NodeRegistry`; deterministic single-cluster inference placement; bounded in-memory inference job status; chat and inference gateways | Placement covers the currently loaded model on online ADB-observed RPC workers only; no durable job history, resource scoring, general capability negotiation, or multi-cluster scheduling |
 | AI/chat runtime | Python standard-library HTTP server; provider protocol; llama.cpp adapter; one read-only status tool | Prototype is app-oriented and not yet a stable public engine API; provider contract covers chat, not workload/capability negotiation |
 | Inference | Upstream llama.cpp `llama-server` + `ggml-rpc-server` Android ARM64 workers; one GGUF distributed by RPC | Experimental, development scripts, USB ADB transport; RPC is unauthenticated |
 | Android node telemetry | Mac-hosted Python ADB bridge reads CPU, available RAM and thermal service; hashes serials | It is a development bridge, not an Android-resident authenticated node agent; discovery is model-agnostic, while worker/runtime compatibility is still device-specific |
@@ -46,7 +46,7 @@ The diagram describes the current dashboard plus its intended/current chat integ
 
 Relevant code: `apps/web/src/app/`, `src/dotnet/DistributedAI.Platform/`, `src/dotnet/DistributedAI.Contracts/`, `experiments/phase-3/python/inference/`, `experiments/phase-3/python/agent_runtime/`, `experiments/phase-0/`, `experiments/phase-1/`, and `tools/`.
 
-The ASP.NET Core platform now proxies `/v1/models` and `/v1/chat/completions` to the Python runtime. Completion requests pass through the .NET distributed-readiness gate, and a structured error in the upstream SSE stream marks the session degraded. The Python route is an internal loopback endpoint; clients should use the platform API on port 5100. The compatibility surface remains a narrow local preview, not a stable public API; see the [Phase 3 guide](../../experiments/phase-3/README.md#local-inference-api-preview).
+The ASP.NET Core platform now proxies `/v1/models` and `/v1/chat/completions` to the Python runtime. Completion requests pass through the .NET distributed-readiness gate and deterministic placement for the currently loaded model. Responses identify the workload mode, backend, and selected node IDs in headers; `/api/inference/jobs/{id}` reports accepted/running/terminal state from a bounded process-local store. Jobs are not durable and are not resumable. Independent-replica mode is rejected; simultaneous requests are separate jobs and do not prove throughput scaling. A structured error in the upstream SSE stream marks the session degraded. The Python route is an internal loopback endpoint; clients should use the platform API on port 5100. The compatibility surface remains a narrow local preview, not a stable public API; see the [Phase 3 guide](../../experiments/phase-3/README.md#local-inference-api-preview) and [ADR 0018](../adr/0018-single-cluster-workload-admission.md).
 
 ## Evidence and confidence
 
@@ -79,8 +79,8 @@ The recorded RPC evidence supports **single-model distributed execution on the c
 4. **Two languages and multiple processes need contract coverage.** .NET, Python, llama.cpp and browser streaming can fail independently. Existing unit tests do not substitute for a full request-path integration run.
 5. **Experimental RPC is a security boundary.** It is unauthenticated and must remain loopback/USB or a trusted isolated network until authenticated transport is designed.
 6. **Liveness and readiness differ.** A recent ADB heartbeat means the phone is connected; a running RPC process does not prove port availability or model readiness. The dashboard labels these observations without advertising inference readiness.
-7. **Scaling modes differ.** Serving separate requests from independent model instances is not partitioning one model for one request; APIs, status and metrics need to say which mode occurred.
-8. **Persistence scope is local-only.** PostgreSQL currently supports chat history and explicit memory notes, not multi-user authorization or engine job state.
+7. **Scaling modes differ.** The inference API labels the current single-model distributed mode and rejects independent replicas until a backend can execute them. Concurrent requests are tracked separately and are not reported as replica throughput.
+8. **Persistence scope is local-only.** PostgreSQL supports chat snapshots and explicit memory notes. Engine job status is bounded, process-local diagnostic state, not durable history or resumable work.
 9. **Hardware and model constraints are empirical.** RAM is not unified across phones; network latency and thermal behavior can make additional nodes slower.
 
 ## Latest integration validation

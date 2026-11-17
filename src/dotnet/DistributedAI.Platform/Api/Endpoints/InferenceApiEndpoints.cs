@@ -9,8 +9,12 @@ public static class InferenceApiEndpoints
     public static RouteHandlerBuilder MapInferenceApiEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/v1/models", ListModelsAsync);
+        endpoints.MapGet("/api/inference/jobs/{jobId:guid}", GetJobAsync);
         return endpoints.MapPost("/v1/chat/completions", CompleteAsync);
     }
+
+    public static IResult GetJobAsync(Guid jobId, IInferenceJobStore jobs) =>
+        jobs.Get(jobId) is { } job ? Results.Ok(job) : Results.NotFound();
 
     public static async Task<IResult> ListModelsAsync(
         IPythonInferenceClient inference,
@@ -30,6 +34,9 @@ public static class InferenceApiEndpoints
         JsonElement request,
         IPythonInferenceClient inference,
         IInferenceReadiness readiness,
+        NodeRegistry nodes,
+        InferenceWorkloadScheduler scheduler,
+        IInferenceJobStore jobs,
         HttpContext context)
     {
         if (request.ValueKind != JsonValueKind.Object)
@@ -50,6 +57,18 @@ public static class InferenceApiEndpoints
             stream = streamValue.GetBoolean();
         }
 
+        var requestedMode = ReadWorkloadMode(request);
+        if (requestedMode.Error is not null)
+        {
+            await WriteErrorAsync(
+                context,
+                requestedMode.IsUnsupported ? StatusCodes.Status501NotImplemented : StatusCodes.Status400BadRequest,
+                requestedMode.IsUnsupported ? "unsupported_workload" : "invalid_request_error",
+                requestedMode.Error,
+                requestedMode.IsUnsupported ? "workload_mode_unsupported" : "invalid_workload_mode");
+            return;
+        }
+
         var status = await readiness.GetAsync(context.RequestAborted);
         if (!status.Available)
         {
@@ -62,19 +81,73 @@ public static class InferenceApiEndpoints
             return;
         }
 
+        if (!request.TryGetProperty("model", out var modelValue) || modelValue.ValueKind != JsonValueKind.String ||
+            string.IsNullOrWhiteSpace(modelValue.GetString()))
+        {
+            await WriteErrorAsync(context, StatusCodes.Status400BadRequest, "invalid_request_error", "model must identify the loaded engine model.", "invalid_model");
+            return;
+        }
+
+        if (!string.Equals(modelValue.GetString(), status.ModelId, StringComparison.Ordinal))
+        {
+            await WriteErrorAsync(context, StatusCodes.Status404NotFound, "invalid_request_error", "The requested model is not loaded by this cluster.", "model_not_found");
+            return;
+        }
+
+        var requirement = new InferencePlacementRequirement(status.ModelId, InferenceWorkloadScheduler.RpcBackend, status.RequiredWorkers);
+        var capabilities = InferenceWorkloadScheduler.FromCurrentCluster(nodes.GetAll(), status.ModelId);
+        var placement = scheduler.PlanSingleModel(requirement, capabilities);
+        if (placement is null)
+        {
+            await WriteErrorAsync(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                "service_unavailable",
+                "No eligible worker placement satisfies the loaded model and backend requirements.",
+                "placement_unavailable");
+            return;
+        }
+
+        InferenceJob job;
+        try
+        {
+            job = jobs.CreateAccepted(placement);
+        }
+        catch (InferenceJobCapacityException)
+        {
+            await WriteErrorAsync(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                "service_unavailable",
+                "The local inference job registry is full. Retry after active requests finish.",
+                "job_capacity_reached");
+            return;
+        }
+        SetJobHeaders(context.Response, job);
+        jobs.TryStart(job.Id);
+
         if (stream)
         {
-            await StreamAsync(request, inference, readiness, context);
+            await StreamAsync(request, inference, readiness, jobs, job, context);
             return;
         }
 
         try
         {
             var completion = await inference.CompleteAsync(request, context.RequestAborted);
+            jobs.TryFinish(job.Id, InferenceJobStates.Completed);
             await Results.Json(completion).ExecuteAsync(context);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            jobs.TryFinish(job.Id, InferenceJobStates.Cancelled, "client_cancelled");
         }
         catch (PythonInferenceException exception)
         {
+            jobs.TryFinish(
+                job.Id,
+                exception.IsTimeout ? InferenceJobStates.TimedOut : InferenceJobStates.Failed,
+                exception.IsTimeout ? "runtime_timeout" : IsClientError(exception.StatusCode) ? "request_rejected" : "runtime_error");
             if (IsClientError(exception.StatusCode))
             {
                 await ExecuteUpstreamErrorAsync(context, exception);
@@ -91,10 +164,35 @@ public static class InferenceApiEndpoints
         }
     }
 
+    private static (string? Error, bool IsUnsupported) ReadWorkloadMode(JsonElement request)
+    {
+        if (!request.TryGetProperty("workload_mode", out var value)) return (null, false);
+        if (value.ValueKind != JsonValueKind.String) return ("workload_mode must be a string.", false);
+
+        return value.GetString() switch
+        {
+            InferenceWorkloadModes.SingleModelDistributed => (null, false),
+            InferenceWorkloadModes.IndependentReplicas =>
+                ("Independent replicas are not executed by this endpoint. Each accepted completion is one single-model distributed job.", true),
+            _ => ("workload_mode must be single_model_distributed.", false),
+        };
+    }
+
+    private static void SetJobHeaders(HttpResponse response, InferenceJob job)
+    {
+        response.Headers["X-Distributed-AI-Job-Id"] = job.Id.ToString("D");
+        response.Headers["X-Distributed-AI-Workload-Mode"] = job.WorkloadMode;
+        response.Headers["X-Distributed-AI-Model"] = job.ModelId;
+        response.Headers["X-Distributed-AI-Backend"] = job.Backend;
+        response.Headers["X-Distributed-AI-Selected-Nodes"] = string.Join(',', job.SelectedNodeIds);
+    }
+
     private static async Task StreamAsync(
         JsonElement request,
         IPythonInferenceClient inference,
         IInferenceReadiness readiness,
+        IInferenceJobStore jobs,
+        InferenceJob job,
         HttpContext context)
     {
         await using var enumerator = inference.StreamCompletionAsync(request, context.RequestAborted)
@@ -105,6 +203,7 @@ public static class InferenceApiEndpoints
         {
             if (!await enumerator.MoveNextAsync())
             {
+                jobs.TryFinish(job.Id, InferenceJobStates.Failed, "empty_stream");
                 readiness.ReportSessionFailure();
                 await WriteErrorAsync(context, StatusCodes.Status502BadGateway, "engine_error", "The inference runtime returned an empty stream.", "inference_degraded");
                 return;
@@ -114,6 +213,10 @@ public static class InferenceApiEndpoints
         }
         catch (PythonInferenceException exception)
         {
+            jobs.TryFinish(
+                job.Id,
+                exception.IsTimeout ? InferenceJobStates.TimedOut : InferenceJobStates.Failed,
+                exception.IsTimeout ? "runtime_timeout" : IsClientError(exception.StatusCode) ? "request_rejected" : "runtime_error");
             if (IsClientError(exception.StatusCode))
             {
                 await ExecuteUpstreamErrorAsync(context, exception);
@@ -122,6 +225,11 @@ public static class InferenceApiEndpoints
 
             readiness.ReportSessionFailure();
             await WriteErrorAsync(context, StatusCodes.Status502BadGateway, "engine_error", "Distributed inference failed. The session is degraded and recovering.", "inference_degraded");
+            return;
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            jobs.TryFinish(job.Id, InferenceJobStates.Cancelled, "client_cancelled");
             return;
         }
 
@@ -138,21 +246,32 @@ public static class InferenceApiEndpoints
             {
                 await WriteChunkAsync(enumerator.Current, context, errorDetector, readiness);
             }
-            if (!errorDetector.HasDone)
+            if (errorDetector.HasError)
             {
+                jobs.TryFinish(job.Id, InferenceJobStates.Failed, "upstream_error");
+                if (!errorDetector.HasDone) await WriteSseDoneAsync(context);
+            }
+            else if (!errorDetector.HasDone)
+            {
+                jobs.TryFinish(job.Id, InferenceJobStates.Failed, "missing_completion_marker");
                 readiness.ReportSessionFailure();
-                if (errorDetector.HasError)
-                {
-                    await WriteSseDoneAsync(context);
-                }
-                else
-                {
-                    await WriteSseErrorAsync(context, "The inference stream ended before its completion marker.");
-                }
+                await WriteSseErrorAsync(context, "The inference stream ended before its completion marker.");
+            }
+            else
+            {
+                jobs.TryFinish(job.Id, InferenceJobStates.Completed);
             }
         }
-        catch (PythonInferenceException)
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
+            jobs.TryFinish(job.Id, InferenceJobStates.Cancelled, "client_cancelled");
+        }
+        catch (PythonInferenceException exception)
+        {
+            jobs.TryFinish(
+                job.Id,
+                exception.IsTimeout ? InferenceJobStates.TimedOut : InferenceJobStates.Failed,
+                exception.IsTimeout ? "runtime_timeout" : "runtime_error");
             readiness.ReportSessionFailure();
             if (errorDetector.HasError)
             {

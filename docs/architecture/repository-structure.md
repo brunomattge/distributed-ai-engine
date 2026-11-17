@@ -70,7 +70,8 @@ This document describes the current repository layout for review. It reflects th
 │   │   ├── 0014-supervised-rpc-session-recovery.md
 │   │   ├── 0015-experimental-rpc-worker-count.md
 │   │   ├── 0016-model-agnostic-android-discovery.md
-│   │   └── 0017-loopback-openai-shaped-inference-preview.md
+│   │   ├── 0017-loopback-openai-shaped-inference-preview.md
+│   │   └── 0018-single-cluster-workload-admission.md
 │   ├── architecture/
 │   │   ├── current-state.md
 │   │   ├── product-vision.md
@@ -137,7 +138,9 @@ This document describes the current repository layout for review. It reflects th
 │           │   ├── Cluster/
 │           │   │   └── NodeRegistry.cs
 │           │   ├── Inference/
-│           │   │   └── InferenceReadiness.cs
+│           │   │   ├── InferenceJobStore.cs
+│           │   │   ├── InferenceReadiness.cs
+│           │   │   └── InferenceWorkloadScheduler.cs
 │           │   └── Ports/
 │           │       ├── IAgentMemoryStore.cs
 │           │       ├── IChatConversationStore.cs
@@ -166,7 +169,9 @@ This document describes the current repository layout for review. It reflects th
 │   │       │   ├── Cluster/
 │   │       │   │   └── NodeRegistryTests.cs
 │   │       │   └── Inference/
-│   │       │       └── InferenceReadinessTests.cs
+│   │       │       ├── InferenceJobStoreTests.cs
+│   │       │       ├── InferenceReadinessTests.cs
+│   │       │       └── InferenceWorkloadSchedulerTests.cs
 │   │       ├── Infrastructure/
 │   │       │   ├── PythonAgentClientTests.cs
 │   │       │   └── PythonInferenceClientTests.cs

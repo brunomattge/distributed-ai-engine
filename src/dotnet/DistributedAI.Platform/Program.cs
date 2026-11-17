@@ -14,6 +14,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(provider =>
     new NodeRegistry(provider.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(6)));
+builder.Services.AddSingleton<InferenceWorkloadScheduler>();
+builder.Services.AddSingleton<IInferenceJobStore, InferenceJobStore>();
 builder.Services.AddHttpClient<IPythonAgentClient, PythonAgentClient>(client =>
 {
     client.BaseAddress = new Uri(agentRuntimeUrl, UriKind.Absolute);

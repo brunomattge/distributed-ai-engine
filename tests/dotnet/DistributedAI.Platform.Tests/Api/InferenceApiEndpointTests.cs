@@ -35,11 +35,139 @@ public sealed class InferenceApiEndpointTests
         var request = Parse("""{"model":"qwen-fast","messages":[{"role":"user","content":"Hi"}]}""");
         var context = NewHttpContext();
 
-        await InferenceApiEndpoints.CompleteAsync(request, client, new StubReadiness(true), context);
+        var jobs = await InvokeAsync(request, client, new StubReadiness(true), context);
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.Equal(1, client.CompletionCalls);
         Assert.Contains("Hello", await ReadBodyAsync(context));
+        Assert.Equal(InferenceWorkloadModes.SingleModelDistributed, context.Response.Headers["X-Distributed-AI-Workload-Mode"]);
+        Assert.Equal(InferenceWorkloadScheduler.RpcBackend, context.Response.Headers["X-Distributed-AI-Backend"]);
+        Assert.Equal("adb-test-0,adb-test-1,adb-test-2", context.Response.Headers["X-Distributed-AI-Selected-Nodes"]);
+
+        var jobId = Guid.Parse(context.Response.Headers["X-Distributed-AI-Job-Id"]!);
+        var job = jobs.Get(jobId);
+        Assert.NotNull(job);
+        Assert.Equal(InferenceJobStates.Completed, job.State);
+        Assert.Equal("qwen-fast", job.ModelId);
+
+        var (jobStatus, jobBody) = await ExecuteAsync(InferenceApiEndpoints.GetJobAsync(jobId, jobs));
+        Assert.Equal(StatusCodes.Status200OK, jobStatus);
+        Assert.Contains("completed", jobBody);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_rejects_independent_replica_mode_without_claiming_distributed_inference()
+    {
+        var client = new StubInferenceClient("{}");
+        var request = Parse("""{"workload_mode":"independent_replicas","model":"qwen-fast","messages":[{"role":"user","content":"Hi"}]}""");
+        var context = NewHttpContext();
+
+        var jobs = await InvokeAsync(request, client, new StubReadiness(true), context);
+
+        Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
+        Assert.Equal(0, client.CompletionCalls);
+        Assert.Contains("not executed by this endpoint", await ReadBodyAsync(context));
+        Assert.Null(jobs.Get(Guid.Empty));
+    }
+
+    [Fact]
+    public async Task CompleteAsync_rejects_a_model_that_is_not_loaded_before_job_admission()
+    {
+        var client = new StubInferenceClient("{}");
+        var request = Parse("""{"model":"qwen-large","messages":[{"role":"user","content":"Hi"}]}""");
+        var context = NewHttpContext();
+
+        await InvokeAsync(request, client, new StubReadiness(true), context);
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal(0, client.CompletionCalls);
+        Assert.Contains("model_not_found", await ReadBodyAsync(context));
+        Assert.False(context.Response.Headers.ContainsKey("X-Distributed-AI-Job-Id"));
+    }
+
+    [Fact]
+    public async Task CompleteAsync_tracks_concurrent_requests_as_separate_single_model_jobs()
+    {
+        var client = new StubInferenceClient("""{"object":"chat.completion"}""");
+        var jobs = new InferenceJobStore(TimeProvider.System);
+        var readiness = new StubReadiness(true);
+        var firstContext = NewHttpContext();
+        var secondContext = NewHttpContext();
+        var first = Parse("""{"model":"qwen-fast","messages":[{"role":"user","content":"First"}]}""");
+        var second = Parse("""{"model":"qwen-fast","messages":[{"role":"user","content":"Second"}]}""");
+
+        await Task.WhenAll(
+            InvokeAsync(first, client, readiness, firstContext, jobs),
+            InvokeAsync(second, client, readiness, secondContext, jobs));
+
+        var firstId = Guid.Parse(firstContext.Response.Headers["X-Distributed-AI-Job-Id"]!);
+        var secondId = Guid.Parse(secondContext.Response.Headers["X-Distributed-AI-Job-Id"]!);
+        Assert.NotEqual(firstId, secondId);
+        Assert.Equal(InferenceWorkloadModes.SingleModelDistributed, jobs.Get(firstId)!.WorkloadMode);
+        Assert.Equal(InferenceWorkloadModes.SingleModelDistributed, jobs.Get(secondId)!.WorkloadMode);
+        Assert.Equal(InferenceJobStates.Completed, jobs.Get(firstId)!.State);
+        Assert.Equal(InferenceJobStates.Completed, jobs.Get(secondId)!.State);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_records_runtime_timeout_as_timed_out()
+    {
+        var client = new StubInferenceClient("{}")
+        {
+            CompletionFailure = new PythonInferenceException("Runtime timed out.", isTimeout: true),
+        };
+        var context = NewHttpContext();
+        var jobs = await InvokeAsync(
+            Parse("""{"model":"qwen-fast","messages":[{"role":"user","content":"Hi"}]}"""),
+            client,
+            new StubReadiness(true),
+            context);
+
+        var jobId = Guid.Parse(context.Response.Headers["X-Distributed-AI-Job-Id"]!);
+        Assert.Equal(InferenceJobStates.TimedOut, jobs.Get(jobId)!.State);
+        Assert.Equal(1, client.CompletionCalls);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_records_client_cancellation_without_degrading_the_cluster()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var readiness = new StubReadiness(true);
+        var context = NewHttpContext();
+        context.RequestAborted = cancellation.Token;
+
+        var jobs = await InvokeAsync(
+            Parse("""{"model":"qwen-fast","messages":[{"role":"user","content":"Hi"}]}"""),
+            new StubInferenceClient("{}"),
+            readiness,
+            context);
+
+        var jobId = Guid.Parse(context.Response.Headers["X-Distributed-AI-Job-Id"]!);
+        Assert.Equal(InferenceJobStates.Cancelled, jobs.Get(jobId)!.State);
+        Assert.False(readiness.FailureReported);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_fails_admission_when_a_worker_is_missing()
+    {
+        var client = new StubInferenceClient("{}");
+        var readiness = new StubReadiness(true);
+        var context = NewHttpContext();
+        var registry = CreateReadyNodeRegistry();
+        registry.MarkDisconnected("adb-test-2", out _);
+
+        await InvokeAsync(
+            Parse("""{"model":"qwen-fast","messages":[{"role":"user","content":"Hi"}]}"""),
+            client,
+            readiness,
+            context,
+            nodes: registry);
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
+        Assert.Equal(0, client.CompletionCalls);
+        Assert.Contains("placement_unavailable", await ReadBodyAsync(context));
+        Assert.False(context.Response.Headers.ContainsKey("X-Distributed-AI-Job-Id"));
     }
 
     [Fact]
@@ -50,7 +178,7 @@ public sealed class InferenceApiEndpointTests
         var request = Parse("""{"model":"qwen-fast","messages":[{"role":"user","content":"Hi"}]}""");
         var context = NewHttpContext();
 
-        await InferenceApiEndpoints.CompleteAsync(request, client, readiness, context);
+        await InvokeAsync(request, client, readiness, context);
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
         Assert.Equal(0, client.CompletionCalls);
@@ -71,7 +199,7 @@ public sealed class InferenceApiEndpointTests
         var request = Parse("""{"model":"qwen-fast","stream":true}""");
         var context = NewHttpContext();
 
-        await InferenceApiEndpoints.CompleteAsync(request, client, readiness, context);
+        await InvokeAsync(request, client, readiness, context);
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.True(readiness.FailureReported);
@@ -89,7 +217,7 @@ public sealed class InferenceApiEndpointTests
         var streamRequest = Parse("""{"model":"qwen-fast","stream":true}""");
         var streamContext = NewHttpContext();
 
-        await InferenceApiEndpoints.CompleteAsync(streamRequest, client, readiness, streamContext);
+        await InvokeAsync(streamRequest, client, readiness, streamContext);
 
         Assert.Equal(StatusCodes.Status200OK, streamContext.Response.StatusCode);
         Assert.True(readiness.FailureReported);
@@ -99,7 +227,7 @@ public sealed class InferenceApiEndpointTests
 
         var completionRequest = Parse("""{"model":"qwen-fast","messages":[{"role":"user","content":"Try again"}]}""");
         var completionContext = NewHttpContext();
-        await InferenceApiEndpoints.CompleteAsync(completionRequest, client, readiness, completionContext);
+        await InvokeAsync(completionRequest, client, readiness, completionContext);
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, completionContext.Response.StatusCode);
         Assert.Equal(0, client.CompletionCalls);
@@ -117,7 +245,7 @@ public sealed class InferenceApiEndpointTests
         var request = Parse("""{"model":"qwen-fast","stream":true}""");
         var context = NewHttpContext();
 
-        await InferenceApiEndpoints.CompleteAsync(request, client, readiness, context);
+        await InvokeAsync(request, client, readiness, context);
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.True(readiness.FailureReported);
@@ -138,11 +266,43 @@ public sealed class InferenceApiEndpointTests
         var request = Parse("""{"model":"qwen-fast","messages":[{"role":"user","content":"Hi"}]}""");
         var context = NewHttpContext();
 
-        await InferenceApiEndpoints.CompleteAsync(request, client, readiness, context);
+        await InvokeAsync(request, client, readiness, context);
 
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, context.Response.StatusCode);
         Assert.False(readiness.FailureReported);
         Assert.Contains("tools_not_supported", await ReadBodyAsync(context));
+    }
+
+    private static async Task<InferenceJobStore> InvokeAsync(
+        JsonElement request,
+        StubInferenceClient client,
+        StubReadiness readiness,
+        DefaultHttpContext context,
+        InferenceJobStore? jobs = null,
+        NodeRegistry? nodes = null)
+    {
+        var jobStore = jobs ?? new InferenceJobStore(TimeProvider.System);
+        await InferenceApiEndpoints.CompleteAsync(
+            request,
+            client,
+            readiness,
+            nodes ?? CreateReadyNodeRegistry(),
+            new InferenceWorkloadScheduler(),
+            jobStore,
+            context);
+        return jobStore;
+    }
+
+    private static NodeRegistry CreateReadyNodeRegistry()
+    {
+        var registry = new NodeRegistry(TimeProvider.System, TimeSpan.FromSeconds(6));
+        for (var index = 0; index < 3; index++)
+        {
+            var nodeId = $"adb-test-{index}";
+            registry.Register(new RegisterNodeRequest(nodeId, $"Test phone {index}", "Android test"), out _);
+            registry.Heartbeat(nodeId, new HeartbeatRequest(10, 1000, 35, 5, RpcWorkerProcessState.Running), out _);
+        }
+        return registry;
     }
 
     private static JsonElement Parse(string json)
@@ -207,6 +367,7 @@ public sealed class InferenceApiEndpointTests
         public Task<JsonElement> CompleteAsync(JsonElement request, CancellationToken cancellationToken)
         {
             CompletionCalls++;
+            cancellationToken.ThrowIfCancellationRequested();
             if (CompletionFailure is not null) throw CompletionFailure;
             return Task.FromResult(Parse(completionJson));
         }

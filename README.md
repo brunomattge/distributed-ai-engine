@@ -17,6 +17,7 @@ The product and architecture reference is [Distributed AI Engine — Product Vis
 | Python provider adapter and read-only cluster-status tool | **Experimental** | Local prototype; not a stable public engine API or general agent platform |
 | Backend-neutral inference provider boundary | **Experimental local implementation** | Python inference client is isolated behind a .NET application port; no stable provider/plugin contract yet |
 | OpenAI-shaped inference API | **Experimental local preview** | `/v1/models` and streaming/non-streaming `/v1/chat/completions` through the loopback .NET gateway; a standard-library terminal client is included; limited subset, not a stable public API |
+| Single-cluster workload admission | **Experimental local implementation** | Deterministic selection for the loaded model and `llama.cpp-rpc`; response metadata and bounded in-memory job state; independent replicas are unsupported |
 | Authenticated LAN nodes, additional operating systems, multiple clusters | **Planned** | Progressive support after real adapter/security validation |
 | Embeddings | **Planned / optional capability** | Separate model/backend acceptance; no required vector database in engine |
 | RAG application | **Planned / optional application** | Post-core; storage/indexing remains outside engine |

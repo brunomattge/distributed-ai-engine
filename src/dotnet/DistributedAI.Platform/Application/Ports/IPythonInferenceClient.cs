@@ -16,8 +16,10 @@ public sealed class PythonInferenceException(
     string message,
     int statusCode = StatusCodes.Status502BadGateway,
     string? responseBody = null,
-    Exception? innerException = null) : Exception(message, innerException)
+    Exception? innerException = null,
+    bool isTimeout = false) : Exception(message, innerException)
 {
     public int StatusCode { get; } = statusCode;
     public string? ResponseBody { get; } = responseBody;
+    public bool IsTimeout { get; } = isTimeout;
 }

@@ -43,7 +43,7 @@ public sealed class PythonInferenceClient(HttpClient httpClient) : IPythonInfere
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new PythonInferenceException("The Python inference request timed out.", innerException: exception);
+            throw new PythonInferenceException("The Python inference request timed out.", innerException: exception, isTimeout: true);
         }
 
         using (response)
@@ -112,7 +112,7 @@ public sealed class PythonInferenceClient(HttpClient httpClient) : IPythonInfere
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new PythonInferenceException("The Python inference request timed out.", innerException: exception);
+            throw new PythonInferenceException("The Python inference request timed out.", innerException: exception, isTimeout: true);
         }
 
         if (!response.IsSuccessStatusCode)
