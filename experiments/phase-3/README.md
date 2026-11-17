@@ -11,7 +11,7 @@ Provide a local browser chat backed by one llama.cpp server that keeps the distr
 - Chat history lives only in the browser tab; reloading clears it.
 - The only agent tool calls the Phase 1 status command. It cannot run arbitrary commands or change device state.
 - The model takes about 160 seconds to become ready, and generation is about 1 token/second on the current USB setup.
-- Current devices are two Galaxy A07s and one Galaxy A06. USB is the selected transport; Wi-Fi evaluation is deferred by the owner. Other Android ABIs/backends remain unvalidated; no exact Samsung model is required by the MVP.
+- Current devices are two Galaxy A07s and one Galaxy A06. USB is the supported transport. Other Android ABIs/backends remain unvalidated; no exact Samsung model is required by the MVP.
 - Hardware priority is compatible Android phones first, other CPU platforms when they are available for validation, and GPU hosts in a later platform milestone. The inference contract is separated for future adapters, but only the current llama.cpp Android path exists today.
 
 ## Acceptance criteria
@@ -21,6 +21,38 @@ Provide a local browser chat backed by one llama.cpp server that keeps the distr
 3. The llama.cpp server uses RPC0/RPC1/RPC2 for model weights and logs graph calculation on all three phones, with zero Host model weights.
 4. The HTTP services bind to loopback only.
 5. Raw engine and worker logs stay unchanged; a separate final English summary is saved with the run.
+
+## Complete local stack
+
+From the repository root, use `./tools/run-local-mvp.sh` to start the distributed model, the .NET platform, the ADB bridge, and Angular in one Terminal session. The launcher requires exactly three authorized USB Android devices, defaults to the measured fast model, waits for model and cluster readiness, and stops its child launchers and their RPC workers on Ctrl+C. Use `./tools/run-local-mvp.sh large` for the 7B profile or pass a supported GGUF path. The lower-level `start-mvp.sh` remains useful for inference-only experiments; its Python port 8000 is internal to the .NET gateway for integrated use.
+
+On 2026-11-16, the one-terminal launcher was validated on the available three-phone USB cohort (two Galaxy A07 and one Galaxy A06, Android 16). The fast Qwen2.5 0.5B model reached ready state in 19 seconds, and the .NET status endpoint reported 3/3 active RPC workers. Model buffers were allocated as 90/78/205 MiB on RPC0/RPC1/RPC2 and 0 MiB on the Mac. Ctrl+C stopped the coordinator and all three RPC workers; ports 4200, 5100, 8000, 8080, 50052, 50053, and 50054 were free afterward. Worker logs contained one graph-recompute record each during startup. No chat completion was requested during this launcher lifecycle check, so it is not a generation benchmark or a response-quality test.
+
+## Local inference API preview
+
+The ASP.NET Core platform exposes a small OpenAI-shaped API at `http://127.0.0.1:5100/v1` for independent client experiments. Run the Phase 3 model launcher and the .NET platform with the ADB bridge (`./tools/run-dashboard.sh adb`) so all three Android nodes are registered. `GET /models` lists the configured model, and `POST /chat/completions` supports text messages, `temperature`, `max_completion_tokens`, legacy `max_tokens`, and SSE streaming. Send only one token-limit field; values from 1 through 2048 are accepted. Completions pass through the platform's distributed-readiness gate; an upstream structured SSE error marks the session degraded. The Python routes on port 8000 are internal and must not be used by clients because they bypass the .NET session-failure latch. Both services remain loopback-only. Tool calling, authentication, model negotiation, usage accounting, and full OpenAI API compatibility are not implemented. The existing Angular chat continues through the .NET gateway and agent runtime.
+
+With the Phase 3 launcher running and the model ready, a local client can try:
+
+```sh
+curl http://127.0.0.1:5100/v1/models
+
+curl http://127.0.0.1:5100/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"MODEL_ID_FROM_MODELS","messages":[{"role":"user","content":"Explain RPC in one sentence."}],"stream":true}'
+```
+
+The repository also includes a dependency-free terminal client that discovers the first model, prints streamed text as it arrives, and reports client-side first-content and elapsed times:
+
+```sh
+python3 examples/clients/stream_completion.py
+```
+
+This exercises the HTTP contract independently of Angular. The real distributed run still requires the model launcher, the .NET platform, the ADB bridge, and all three compatible Android workers.
+
+On 2026-11-16, the dependency-free reference client completed a physical streamed request through the .NET `/v1` gateway and all three USB Android RPC workers using Qwen2.5 0.5B Q4_K_M. The prompt `Reply with only OK.` returned `OK` with a two-token limit. The client observed 1,786.9 ms to first content and 2.019 s total; the server summary measured 1.47 s prompt evaluation, 1.71 s total, and 4.24 generated tokens/s. These timings come from one short request and are not a benchmark. The model loaded 90/78/205 MiB of weights on RPC0/RPC1/RPC2 and 0 MiB on the Mac.
+
+The official OpenAI Python SDK was installed only in a temporary environment and tested on the same USB cohort. With SDK version 2.48.0, model listing, streamed chat completion, and structured `tools_not_supported` HTTP 422 errors worked. A physical streamed request using `max_completion_tokens=2` returned `OK`; Python HTTP tests verify the field maps to the provider's token limit. The legacy `max_tokens` field remains covered by the same tests. Sending both fields or an out-of-range limit returns HTTP 400. This is evidence for those specific operations, not full OpenAI API compatibility. Shutdown released all local ports and stopped all three Android RPC processes; no SDK dependency was added to the repository.
 
 ## Use
 
@@ -93,6 +125,40 @@ English run summary records the selected RPC count and each worker's graph
 activity. This is an experiment control, not a scheduler or a claim that a
 single-worker run is distributed across the whole cluster.
 
+To run repeatable measurements from the same Terminal session, set
+`INFERENCE_BENCHMARK_REPETITIONS` and the metadata below before starting the
+launcher. The launcher waits for model readiness, runs the requested number of
+uncached streamed requests, writes a JSON report under the ignored local results
+folder, then stops the model and workers through its normal cleanup path. Repeat
+the command with `INFERENCE_WORKER_COUNT=1`, `2`, and `3` as separate runs.
+
+```sh
+INFERENCE_WORKER_COUNT=3 \
+INFERENCE_BENCHMARK_REPETITIONS=3 \
+INFERENCE_BENCHMARK_MODEL_LICENSE=Apache-2.0 \
+INFERENCE_BENCHMARK_RUNTIME_REVISION=9183a552e5fdcbdb5243f187f3a63204eca7dba9 \
+INFERENCE_BENCHMARK_HARDWARE_COHORT='two Galaxy A07 and one Galaxy A06, Android 16, USB' \
+./start-mvp.sh fast
+```
+
+The report calculates the selected GGUF's SHA-256 and records the model ID,
+license, runtime revision, cohort, context, prompt, temperature, token limit,
+selected worker count, each request's first-content latency and total time,
+failures, and median/range summary. For each request, it samples selected
+Android workers before, during, and after inference. Every sample records a UTC
+timestamp, RPC worker, model family, Android version, `MemAvailable`, the `SKIN`
+temperature when exposed, and collection duration. The JSON includes raw samples
+and per-request per-worker ranges/means; ADB serials are never copied into the
+report. It sends requests directly to the local llama.cpp OpenAI-shaped endpoint
+for inference measurements; it does not measure the .NET or Angular request
+path. Use a non-sensitive prompt because the exact prompt is stored in the
+local report. These are device-wide values, not model-process RAM or internal
+chip temperatures, and polling adds a small amount of USB traffic that can
+slightly affect request timings. The client does not infer token throughput
+from SSE chunk counts. Retain the launcher-generated English session summary
+and coordinator/worker logs alongside the JSON report when publishing a
+benchmark.
+
 Open http://127.0.0.1:8000 in a browser. Ctrl+C stops the chat API and model server and stops the workers started by the launcher. When the first streamed content arrives, the Terminal prints its runtime-observed latency in English and the event is appended to `chat-events.jsonl`. The session summary records completed response count, startup and request timings, worker graph counts, weight allocation, and the last streamed response's time to first content. This latency starts when the Python chat runtime begins processing the stream and includes any tool round trip; it is not a model-only TTFT measurement.
 
 ### Supervised RPC recovery
@@ -112,16 +178,16 @@ Validated on 2026-11-14 with the Qwen2.5 7B Q3_K_M model over USB on two Galaxy 
 - Server readiness took 160 s. The status tool round-trip took 254.21 s across its two model calls (153.25 s + 100.96 s); the final answer was “All three cluster phones are ready and healthy.” A cached follow-up took 20.03 s at 0.90 tokens/s.
 - Local run summaries and raw worker logs are excluded from Git; the measured outcomes and limitations are recorded in this guide.
 
-The prototype passed its chat, tool, loopback, and distributed-inference checks on the available two-A07 plus one-A06 cluster. Wi-Fi is deferred by the owner, and other Android ABIs/backends need separate compatibility runs. Current validation: 35 Python tests passed; 48 .NET tests passed and 2 PostgreSQL integration tests were skipped; 14 Angular tests passed.
+The prototype passed its chat, tool, loopback, and distributed-inference checks on the available two-A07 plus one-A06 cluster. USB is the supported transport; other Android ABIs/backends need separate compatibility runs. The counts in this historical validation are from that earlier point in development.
 
 An exploratory profile comparison used one identical short prompt and a
-two-token output on each local model: Qwen2.5 0.5B Q4_K_M returned in 9.08 s
+two-token output on each model: Qwen2.5 0.5B Q4_K_M returned in 9.08 s
 with a 19 s load; Qwen2.5 7B Q3_K_M returned in 133.05 s with a 163 s load.
 Each worker logged graph work for both runs and the Mac held 0 MiB of model
-weights. The launcher therefore defaults to the fastest profile measured so
-far, the 0.5B; the larger model remains selectable. See the [comparison
-recorded result. The exact measurements are local artifacts excluded from Git. This single
-sample per profile is not a repeated benchmark or a quality assessment.
+weights. The launcher defaults to the 0.5B profile based on its lower observed
+latency in this single sample; the larger model remains selectable. This is
+not a repeated benchmark or a quality assessment. Run logs are local and
+excluded from Git.
 A separate tool-selection smoke check showed the 0.5B model calling the
 allowlisted cluster-status tool with a simulated callback; it did not validate
 the reliability of tool selection or query the physical workers.
@@ -133,9 +199,9 @@ On 2026-11-15, one fresh chat request per configuration used the same Qwen2.5
 All three answered `OK`; total llama.cpp times were 8.38 s, 8.40 s and 8.92 s.
 Each selected phone logged one `GRAPH_RECOMPUTE`, and the Mac held 0 MiB of
 model weights. This is one sample per configuration, not enough to compare
-performance. TTFT was not recorded separately. See the [English comparison
-summary in this guide; raw device logs remain local and are excluded from Git. The selection control is experimental; it is
-not scheduler placement or proof of per-phone model readiness.
+performance. TTFT was not recorded separately. Raw device logs remain local
+and are excluded from Git. The selection control is experimental; it is not
+scheduler placement or proof of per-phone model readiness.
 
 ### Repeated cold RPC worker-count measurements — 2026-11-16
 
@@ -169,6 +235,67 @@ excluded from Git. The launcher’s per-session chat summary reports `STOPPED`
 for this low-level benchmark because requests went directly to llama.cpp and
 did not pass through the Python chat event logger; success was confirmed from
 the HTTP responses and coordinator/worker logs.
+
+The reproducible benchmark mode was run on 2026-11-16 for one, two, and three
+selected RPC workers on the same cohort. Each session sent three cache-disabled
+streaming requests using `Reply with only the word OK.`, a two-token limit,
+temperature 0.2, and context 512. All nine returned `OK.` with zero failures.
+Model startup was measured separately from request latency.
+
+| Selected workers | Median HTTP first content | Median total | Total range | Model-weight allocation | Mac model weights |
+| --- | ---: | ---: | ---: | --- | ---: |
+| RPC0 | 1,411.651 ms | 1.628 s | 1.615–1.637 s | RPC0 373 MiB | 0 MiB |
+| RPC0 + RPC1 | 1,445.160 ms | 1.699 s | 1.675–1.709 s | RPC0 129 MiB; RPC1 244 MiB | 0 MiB |
+| RPC0 + RPC1 + RPC2 | 1,451.276 ms | 1.737 s | 1.709–1.797 s | RPC0 90 MiB; RPC1 78 MiB; RPC2 205 MiB | 0 MiB |
+
+The model was Qwen2.5 0.5B Q4_K_M (SHA-256
+`74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db`), and the
+llama.cpp revision was `9183a552e5fdcbdb5243f187f3a63204eca7dba9`. Startup took
+22/17/20 s for the 1/2/3-worker sessions. These three short samples per
+configuration do not establish a performance trend; one worker was fastest in
+this specific run. The coordinator reported graph work on each selected RPC,
+but those session totals do not identify work per individual request. The JSON
+reports and raw technical logs remain local and excluded from Git. Device RAM
+and temperature were not sampled during these requests.
+
+### Repeated worker-count run with per-request Android telemetry — 2026-11-16
+
+The same USB cohort (two Galaxy A07s and one Galaxy A06, Android 16) ran three
+cache-disabled requests for each selection of 1, 2, and 3 RPC workers. All nine
+requests returned `OK.`. During each request the sampler polled every selected
+worker over ADB at 0.5-second intervals; each worker contributed nine
+during-request samples across its three requests, in addition to before/after
+samples. RAM is Android `MemAvailable`; temperature is the `SKIN` sensor.
+
+| Selected workers | Median first content | Median total | During-request telemetry by selected worker (RAM range, mean; SKIN temperature) |
+| --- | ---: | ---: | --- |
+| RPC0 | 1,330.183 ms | 1.552 s | RPC0: 1,092–1,107 MiB (1,099.11 mean); 40.1 °C |
+| RPC0 + RPC1 | 1,409.903 ms | 1.618 s | RPC0: 1,355–1,368 MiB (1,360.22 mean); 40.1 °C. RPC1: 1,167–1,180 MiB (1,172.78 mean); 38.0 °C |
+| RPC0 + RPC1 + RPC2 | 1,516.533 ms | 1.718 s | RPC0: 1,396–1,403 MiB (1,399.67 mean); 40.1 °C. RPC1: 1,340–1,360 MiB (1,347.22 mean); 38.0 °C. RPC2: 1,153–1,176 MiB (1,163.11 mean); 42.0 °C |
+
+Each cell summarizes samples collected during that configuration's three
+requests; exact timestamped readings and before/during/after phases are in the
+local JSON reports. The numbers are device-wide, short-window observations,
+not process memory or model-only heat. ADB sampling shares the USB link and may
+slightly affect latency. These three requests per configuration do not support
+a general performance or thermal trend. Reports are under the ignored local
+`experiments/phase-1/results/benchmarks/` directory and contain no ADB serials.
+Each JSON report has a sibling `-summary-en-us.log` with concise per-request
+latency and worker telemetry.
+
+### Final integrated MVP run — 2026-11-16
+
+The root launcher was run with the default fast profile on the attached USB
+cohort (two Galaxy A07s and one Galaxy A06, Android 16). The Python model API
+and ASP.NET Core inference-status API both reported `ready` with 3/3 selected
+RPC workers. A non-streaming `/v1/chat/completions` request through the .NET
+gateway returned `OK`. The response used Qwen2.5 0.5B Instruct Q4_K_M; startup
+took 19 seconds and the request took 1.71 seconds (1.48 seconds prompt
+processing, 4.29 generated tokens/s). RPC0/RPC1/RPC2 held 90/78/205 MiB of
+model weights, and the Mac held 0 MiB. Each worker log recorded one
+`GRAPH_RECOMPUTE` operation during the session. Ctrl+C stopped the model
+server, API, ADB bridge and all three workers; the session summary is English
+and raw technical logs remain local and excluded from Git.
 
 ### Runtime-observed first-content smoke — 2026-11-15
 
@@ -212,4 +339,4 @@ With two Galaxy A07s and one Galaxy A06 (Android 16) on USB, the live dashboard 
 
 The same coordinator session recorded 27 `GRAPH_RECOMPUTE` operations in each of RPC0/RPC1/RPC2 worker logs. Model weights were allocated as 90/78/205 MiB on RPC0/RPC1/RPC2, with 0 MiB on the Mac Host. A nearby dashboard telemetry sample recorded CPU/available RAM/surface temperature of 14.1%/1,051 MiB/42.0 °C for the A06 and 18.5%/1,304 MiB/40.1 °C and 11.5%/1,248 MiB/38.0 °C for the two A07s; these are device snapshots, not inference-only utilization.
 
-Validation results: 60 .NET tests passed and two PostgreSQL integration tests were skipped without the opt-in database; 40 Python tests passed; 16 Angular tests passed; the Angular production build succeeded and `npm audit` reported no vulnerabilities. The .NET restore did report a high-severity advisory for transitive `Newtonsoft.Json` 9.0.1 through `Microsoft.NET.Test.Sdk` 17.3.2; it did not fail this build, but should be resolved before a tagged release. English run summary and raw device logs are local artifacts excluded from Git.
+At that clean-checkout point, 60 .NET tests passed and two PostgreSQL integration tests were skipped because the opt-in database was not configured; 40 Python tests and 16 Angular tests passed, the Angular production build succeeded, and `npm audit` reported no vulnerabilities. The .NET test SDK then in use (17.3.2) brought in an affected transitive Newtonsoft.Json version. The SDK has since been upgraded to 18.12.0; see the current local release checklist for the follow-up vulnerability scan. These are historical clean-checkout results, not the final validation for the present working tree.

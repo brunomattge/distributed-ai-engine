@@ -201,9 +201,9 @@ class ChatBehaviorTests(unittest.TestCase):
         provider = FakeChatProvider([], chunks=["Short response."])
         runtime = AgentRuntimeV1(provider, lambda: {}, lambda event: None, "fake")
 
-        list(runtime.chat_stream(self.messages, memories=["Prefere respostas curtas."]))
+        list(runtime.chat_stream(self.messages, memories=["Prefers concise answers."]))
 
-        self.assertIn("Prefere respostas curtas.", provider.requests[0].messages[0]["content"])
+        self.assertIn("Prefers concise answers.", provider.requests[0].messages[0]["content"])
 
     def test_streaming_status_chat_runs_tool_then_streams_answer(self):
         tool_call = {
@@ -289,6 +289,137 @@ class LocalHttpTests(unittest.TestCase):
             "supervisor_generation": 3,
             "supervisor_message": "Reconnect the phones.",
         })
+
+    def test_engine_models_endpoint_lists_configured_distributed_model(self):
+        with patch.object(chat_server, "MODEL_ID", "qwen-test"):
+            with urlopen(self.base_url + "/v1/models", timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+        self.assertEqual(payload["object"], "list")
+        self.assertEqual(payload["data"][0]["id"], "qwen-test")
+        self.assertEqual(payload["data"][0]["owned_by"], "distributed-ai-engine")
+
+    def test_engine_completion_uses_inference_provider_without_agent_runtime(self):
+        provider = FakeChatProvider([{"content": "A direct engine response."}])
+        request = Request(
+            self.base_url + "/v1/chat/completions",
+            data=json.dumps({"model": "qwen-test", "messages": [{"role": "user", "content": "Explain RPC."}], "max_tokens": 37}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with patch.object(chat_server, "MODEL_ID", "qwen-test"), patch.object(chat_server, "_INFERENCE_PROVIDER", provider), patch.object(chat_server, "query_model_status", return_value={"state": "ready"}), patch.object(chat_server, "query_cluster_status", return_value={"healthy": True}), patch.object(chat_server, "query_supervisor_status", return_value={"supervisor_state": "ready"}):
+            with urlopen(request, timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+        self.assertEqual(payload["object"], "chat.completion")
+        self.assertEqual(payload["model"], "qwen-test")
+        self.assertEqual(payload["choices"][0]["message"], {"role": "assistant", "content": "A direct engine response."})
+        self.assertEqual(provider.requests[0].messages, [{"role": "user", "content": "Explain RPC."}])
+        self.assertEqual(provider.requests[0].tools, [])
+        self.assertEqual(provider.requests[0].tool_choice, "none")
+        self.assertEqual(provider.requests[0].max_tokens, 37)
+
+    def test_engine_completion_maps_max_completion_tokens_to_provider_limit(self):
+        provider = FakeChatProvider([{"content": "A direct engine response."}])
+        request = Request(
+            self.base_url + "/v1/chat/completions",
+            data=json.dumps({
+                "model": "qwen-test",
+                "messages": [{"role": "user", "content": "Explain RPC."}],
+                "max_completion_tokens": 13,
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with patch.object(chat_server, "MODEL_ID", "qwen-test"), patch.object(chat_server, "_INFERENCE_PROVIDER", provider), patch.object(chat_server, "query_model_status", return_value={"state": "ready"}), patch.object(chat_server, "query_cluster_status", return_value={"healthy": True}), patch.object(chat_server, "query_supervisor_status", return_value={"supervisor_state": "ready"}):
+            with urlopen(request, timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+        self.assertEqual(payload["object"], "chat.completion")
+        self.assertEqual(provider.requests[0].max_tokens, 13)
+
+    def test_engine_completion_rejects_ambiguous_or_invalid_token_limits(self):
+        invalid_limits = [
+            {"max_completion_tokens": 0},
+            {"max_completion_tokens": True},
+            {"max_completion_tokens": 2049},
+            {"max_tokens": 12, "max_completion_tokens": 13},
+        ]
+        for token_limits in invalid_limits:
+            with self.subTest(token_limits=token_limits):
+                payload = {
+                    "model": "qwen-test",
+                    "messages": [{"role": "user", "content": "Hi"}],
+                    **token_limits,
+                }
+                request = Request(
+                    self.base_url + "/v1/chat/completions",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch.object(chat_server, "MODEL_ID", "qwen-test"):
+                    with self.assertRaises(HTTPError) as raised:
+                        urlopen(request, timeout=2)
+
+                self.assertEqual(raised.exception.code, 400)
+                error = json.loads(raised.exception.read().decode("utf-8"))["error"]
+                self.assertEqual(error["code"], "invalid_request")
+                raised.exception.close()
+
+    def test_engine_completion_streams_openai_shaped_events(self):
+        provider = FakeChatProvider([], chunks=["Hello ", "engine."])
+        request = Request(
+            self.base_url + "/v1/chat/completions",
+            data=json.dumps({"model": "qwen-test", "messages": [{"role": "user", "content": "Hi"}], "stream": True}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with patch.object(chat_server, "MODEL_ID", "qwen-test"), patch.object(chat_server, "_INFERENCE_PROVIDER", provider), patch.object(chat_server, "query_model_status", return_value={"state": "ready"}), patch.object(chat_server, "query_cluster_status", return_value={"healthy": True}), patch.object(chat_server, "query_supervisor_status", return_value={"supervisor_state": "ready"}):
+            with urlopen(request, timeout=2) as response:
+                stream = response.read().decode("utf-8")
+                self.assertEqual(response.headers.get_content_type(), "text/event-stream")
+
+        events = [json.loads(line[6:]) for line in stream.splitlines() if line.startswith("data: {")]
+        self.assertEqual([event["choices"][0]["delta"].get("content") for event in events[:2]], ["Hello ", "engine."])
+        self.assertEqual(events[-1]["choices"][0]["finish_reason"], "stop")
+        self.assertTrue(stream.endswith("data: [DONE]\n\n"))
+
+    def test_engine_completion_rejects_unknown_model_and_tools(self):
+        for payload, expected_code, expected_name in (
+            ({"model": "other", "messages": [{"role": "user", "content": "Hi"}]}, 404, "model_not_found"),
+            ({"model": "qwen-test", "messages": [{"role": "user", "content": "Hi"}], "tools": [{"type": "function"}]}, 422, "tools_not_supported"),
+        ):
+            request = Request(
+                self.base_url + "/v1/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with patch.object(chat_server, "MODEL_ID", "qwen-test"):
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=2)
+            self.assertEqual(raised.exception.code, expected_code)
+            body = json.loads(raised.exception.read().decode("utf-8"))
+            self.assertEqual(body["error"]["code"], expected_name)
+            raised.exception.close()
+
+    def test_engine_completion_is_rejected_while_distributed_runtime_is_not_ready(self):
+        provider = FakeChatProvider([{"content": "Should not execute."}])
+        request = Request(
+            self.base_url + "/v1/chat/completions",
+            data=json.dumps({"model": "qwen-test", "messages": [{"role": "user", "content": "Hi"}]}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with patch.object(chat_server, "MODEL_ID", "qwen-test"), patch.object(chat_server, "_INFERENCE_PROVIDER", provider), patch.object(chat_server, "query_model_status", return_value={"state": "loading"}), patch.object(chat_server, "query_cluster_status", return_value={"healthy": True}), patch.object(chat_server, "query_supervisor_status", return_value={"supervisor_state": "ready"}):
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=2)
+
+        self.assertEqual(raised.exception.code, 503)
+        self.assertEqual(json.loads(raised.exception.read().decode("utf-8"))["error"]["code"], "inference_unavailable")
+        raised.exception.close()
+        self.assertEqual(provider.requests, [])
 
     def test_model_status_reports_ready_loading_and_unavailable_without_worker_probes(self):
         from urllib.error import HTTPError

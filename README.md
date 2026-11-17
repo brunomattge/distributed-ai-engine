@@ -10,13 +10,13 @@ The product and architecture reference is [Distributed AI Engine — Product Vis
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Single-model inference distributed across Android RPC workers | **Experimental / demonstrated** | One GGUF was measured over USB on two Galaxy A07s and one Galaxy A06; other Android models and worker ABIs still need compatibility runs; Wi-Fi is deferred |
+| Single-model inference distributed across Android RPC workers | **Experimental / demonstrated** | One GGUF was measured over USB on two Galaxy A07s and one Galaxy A06; other Android models and worker ABIs still need compatibility runs |
 | Cluster dashboard and USB device monitoring | **Implemented locally** | ADB liveness, telemetry, and observed RPC-process state; neither online nor process-running means model inference-ready |
 | Chat application with streaming | **Implemented locally** | Angular chat through the local platform/runtime and llama.cpp path |
 | Conversation history and explicit memory notes | **Implemented locally** | Existing chatbot application features, not engine state |
 | Python provider adapter and read-only cluster-status tool | **Experimental** | Local prototype; not a stable public engine API or general agent platform |
-| Backend-neutral versioned inference API | **Planned** | First migration target; preserve current chatbot behavior |
-| OpenAI-compatible public API | **Planned** | Interoperability goal subject to contract tests |
+| Backend-neutral inference provider boundary | **Experimental local implementation** | Python inference client is isolated behind a .NET application port; no stable provider/plugin contract yet |
+| OpenAI-shaped inference API | **Experimental local preview** | `/v1/models` and streaming/non-streaming `/v1/chat/completions` through the loopback .NET gateway; a standard-library terminal client is included; limited subset, not a stable public API |
 | Authenticated LAN nodes, additional operating systems, multiple clusters | **Planned** | Progressive support after real adapter/security validation |
 | Embeddings | **Planned / optional capability** | Separate model/backend acceptance; no required vector database in engine |
 | RAG application | **Planned / optional application** | Post-core; storage/indexing remains outside engine |
@@ -36,11 +36,11 @@ Hardware will be validated progressively: the available Android phones come firs
 
 ## Current validated prototype
 
-The current local prototype uses a small Python API and browser UI to validate chat and one read-only cluster-status tool. It starts one Qwen2.5 7B Q3_K_M model through llama.cpp and distributes its weights and graph work across USB-connected Android workers.
+The current local prototype preserves the chatbot and adds the first .NET platform slice. Its recommended fast profile starts one Qwen2.5 0.5B Q4_K_M model through llama.cpp and distributes its weights and graph work across USB-connected Android workers. The optional 7B profile is available but substantially slower on the measured cohort.
 
-**Validated hardware:** macOS, two Samsung Galaxy A07s and one Galaxy A06 (Android 16), USB ADB. The three phones each performed graph work and held model weights; the Mac held 0 MiB of model weights. The MVP does not require a particular Android manufacturer or model; inference still requires a compatible Android ABI and llama.cpp worker build. Wi-Fi transport tests are deferred; current inference experiments use USB.
+**Validated hardware:** macOS, two Samsung Galaxy A07s and one Galaxy A06 (Android 16), USB ADB. The three phones each performed graph work and held model weights; the Mac held 0 MiB of model weights. The MVP does not require a particular Android manufacturer or model; inference still requires a compatible Android ABI and llama.cpp worker build. The supported experiment transport is USB.
 
-Inference is experimental and slow on this setup: model startup takes about 160 seconds, and generation measured around 1 token/s. Keep RPC on USB or a trusted isolated LAN. The RPC protocol has no authentication and must not be exposed to the internet.
+Inference is experimental. In a repeated three-request short-prompt run, model startup took 17–22 seconds across worker counts; the one-worker setting was fastest in that sample, so the results do not show a benefit from adding workers for this small model. The separate 7B experiment took about 160 seconds to become ready. The RPC protocol has no authentication; use the USB ADB tunnel and never expose RPC ports to a network.
 
 ## Requirements
 
@@ -61,14 +61,13 @@ From the project root:
 ./experiments/phase-0/build-android.sh
 ```
 
-Connect and authorize all three phones, then launch the MVP in one Terminal window:
+After building the Mac and Android binaries, connect and authorize three compatible Android phones over USB. Start the distributed model, local APIs, ADB telemetry bridge, and Angular dashboard in one Terminal session:
 
 ```sh
-cd experiments/phase-3
-./start-mvp.sh
+./tools/run-local-mvp.sh
 ```
 
-The default model path is `experiments/phase-0/models/qwen2.5-7b-instruct-q3_k_m.gguf`. To use another model, pass its path as the first argument. Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Press Ctrl+C in Terminal to stop the chat, model server, workers started by the launcher, and USB forwards.
+The launcher defaults to the measured fast Qwen2.5 0.5B profile. Pass `large` to select Qwen2.5 7B Q3_K_M, or pass a supported GGUF path. It verifies that exactly three authorized USB devices are present, waits for the distributed model and cluster API to become ready, and then prints the dashboard, chat, and inference API URLs. Press Ctrl+C to stop both launchers and the RPC workers they started. For the inference-only Python prototype, `./experiments/phase-3/start-mvp.sh [fast|large|model.gguf]` remains available.
 
 See [Phase 0](experiments/phase-0/README.md), [Phase 1](experiments/phase-1/README.md), [Phase 2](experiments/phase-2/README.md), and [Phase 3](experiments/phase-3/README.md) for prototype details and evidence. [Architecture decisions](docs/adr/) explain why the prototype and product target use these boundaries.
 
@@ -111,7 +110,7 @@ dotnet test DistributedAI.slnx --no-build
 ./tools/phase-1-smoke.sh
 ```
 
-The project license is MIT; third-party materials keep their own terms as recorded in [Third-party notices](THIRD_PARTY_NOTICES.md).
+The project license is MIT; third-party materials keep their own terms as recorded in [Third-party notices](THIRD_PARTY_NOTICES.md). The Qwen GGUF sources used by the measured profiles declare Apache-2.0; model weights are downloaded separately and are not in this repository.
 
 ## Tests
 
@@ -120,7 +119,7 @@ GitHub Actions runs the Python test suite and source checks, the .NET build and 
 Run the local API tests without phones or a model:
 
 ```sh
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests/python -v
 ```
 
 The release checks also include shell syntax checks for the launch/build scripts and Python bytecode compilation. End-to-end model inference requires the connected devices.

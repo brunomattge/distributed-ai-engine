@@ -14,14 +14,14 @@ Angular SPA (cluster and chat routes)
      same-origin HTTP / SSE
               v
 ASP.NET Core platform (:5100)
-  node registry | chat gateway | conversations | user-managed memories
+  node registry | chat/inference gateways | conversations | user-managed memories
        | ADB telemetry bridge (development host process)
        +----------------------> PostgreSQL (chat and memories)
               |
               | local HTTP contract
               v
-Python chat/agent prototype (:8000)
-  tool orchestration | provider protocol | cluster-status tool
+Python AI runtime (:8000, loopback)
+  internal inference route | tool orchestration | provider protocol
               |
               | OpenAI-shaped local request
               v
@@ -40,11 +40,13 @@ The diagram describes the current dashboard plus its intended/current chat integ
 | Platform/control plane | ASP.NET Core minimal API; in-memory `NodeRegistry`; chat gateway to Python; conversation and memory endpoints | Heartbeat liveness and ADB-observed RPC process state are separate; no model/backend readiness, generic engine job, or scheduler API |
 | AI/chat runtime | Python standard-library HTTP server; provider protocol; llama.cpp adapter; one read-only status tool | Prototype is app-oriented and not yet a stable public engine API; provider contract covers chat, not workload/capability negotiation |
 | Inference | Upstream llama.cpp `llama-server` + `ggml-rpc-server` Android ARM64 workers; one GGUF distributed by RPC | Experimental, development scripts, USB ADB transport; RPC is unauthenticated |
-| Android node telemetry | Mac-hosted Python ADB bridge reads CPU, available RAM and thermal service; hashes serials | It is a development bridge, not an Android-resident authenticated node agent; only listed Samsung models are accepted |
+| Android node telemetry | Mac-hosted Python ADB bridge reads CPU, available RAM and thermal service; hashes serials | It is a development bridge, not an Android-resident authenticated node agent; discovery is model-agnostic, while worker/runtime compatibility is still device-specific |
 | Persistence | Dedicated local PostgreSQL container; chat snapshots and user-managed notes | No document/vector store; no multi-user tenancy |
-| Packaging/operations | Shell launchers, experiment records, local build/test instructions, GitHub Actions CI for host-side checks | No versioned release artifact; components are not one installable product |
+| Packaging/operations | Coordinated one-terminal local MVP launcher, standalone phase launchers, run records, local build/test instructions, GitHub Actions CI for host-side checks | No versioned release artifact; components are not one installable product |
 
 Relevant code: `apps/web/src/app/`, `src/dotnet/DistributedAI.Platform/`, `src/dotnet/DistributedAI.Contracts/`, `experiments/phase-3/python/inference/`, `experiments/phase-3/python/agent_runtime/`, `experiments/phase-0/`, `experiments/phase-1/`, and `tools/`.
+
+The ASP.NET Core platform now proxies `/v1/models` and `/v1/chat/completions` to the Python runtime. Completion requests pass through the .NET distributed-readiness gate, and a structured error in the upstream SSE stream marks the session degraded. The Python route is an internal loopback endpoint; clients should use the platform API on port 5100. The compatibility surface remains a narrow local preview, not a stable public API; see the [Phase 3 guide](../../experiments/phase-3/README.md#local-inference-api-preview).
 
 ## Evidence and confidence
 
@@ -59,15 +61,15 @@ Relevant code: `apps/web/src/app/`, `src/dotnet/DistributedAI.Platform/`, `src/d
 ### Still unverified or incomplete
 
 - Compatibility runs on additional Android models/ABIs and worker/backend combinations; the current inference evidence uses two A07s and one A06.
-- Wi-Fi/LAN inference transport; the owner has explicitly deferred it and selected USB for current experiments.
+- Direct network inference transport; USB ADB forwarding is the selected and tested path.
 - A supported Android process/node agent that works independently of USB debugging.
 - Whether the current model/API path is suitable as a stable, versioned engine API for external clients.
 - Generalized placement across different hardware types, multiple clusters, independent model replicas, authentication/enrollment, job lifecycle and failure recovery.
-- Model-only time-to-first-token and live per-device CPU/RAM/temperature correlated to the same inference request. The Python streaming runtime now records one runtime-observed first-content sample; it includes the request path and is not model-only TTFT.
+- Model-only time-to-first-token remains unavailable; the Python streaming runtime records client-observed first content, including request-path overhead. The Phase 3 benchmark now correlates Android-wide `MemAvailable` and `SKIN` temperature to each request over USB, but these are not process/model-only readings; per-request CPU correlation remains unmeasured.
 - Reproduction of all historical measurements from a clean checkout on current hardware.
 - A versioned release and contributor reproduction of the documented setup.
 
-The recorded RPC evidence supports **single-model distributed execution on the current mixed three-Android-phone cohort over USB**. The MVP does not require an exact phone model; this evidence establishes only the tested A07/A06 models and current ARM64 worker path. Wi-Fi, fault-tolerant continuation after worker loss, and other Android ABI/backend combinations remain unvalidated.
+The recorded RPC evidence supports **single-model distributed execution on the current mixed three-Android-phone cohort over USB**. The MVP does not require an exact phone model; this evidence establishes only the tested A07/A06 models and current ARM64 worker path. Direct network transport is outside this roadmap; fault-tolerant continuation after worker loss and other Android ABI/backend combinations remain unvalidated.
 
 ## Main architectural risks
 

@@ -7,11 +7,13 @@ import json
 import os
 import subprocess
 import time
+import uuid
 from urllib.error import HTTPError, URLError
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.request import urlopen
 
+from inference.contracts_v1 import ChatCompletionRequestV1
 from inference.llama_cpp_provider import LlamaCppOpenAIProvider
 from agent_runtime.runtime_v1 import AgentRuntimeV1
 
@@ -118,7 +120,8 @@ def create_runtime(provider=None) -> AgentRuntimeV1:
     )
 
 
-_AGENT_RUNTIME = create_runtime()
+_INFERENCE_PROVIDER = LlamaCppOpenAIProvider(LLAMA_API)
+_AGENT_RUNTIME = create_runtime(provider=_INFERENCE_PROVIDER)
 
 
 def chat(
@@ -142,6 +145,17 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def do_GET(self) -> None:
+        if self.path == "/v1/models":
+            self._json(200, {
+                "object": "list",
+                "data": [{
+                    "id": MODEL_ID,
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": "distributed-ai-engine",
+                }],
+            })
+            return
         if self.path == "/api/health":
             self._json(200, {"api": "online", **query_model_status(), **query_supervisor_status()})
             return
@@ -157,6 +171,9 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": "Not found."})
 
     def do_POST(self) -> None:
+        if self.path == "/v1/chat/completions":
+            self._handle_engine_completion()
+            return
         if self.path == "/api/chat/stream":
             self._handle_chat_stream()
             return
@@ -174,6 +191,123 @@ class Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": str(exc)})
         except Exception as exc:  # Return a useful local diagnostic to the UI.
             self._json(502, {"error": str(exc)})
+
+    def _handle_engine_completion(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 1 or length > 256 * 1024:
+                raise ValueError("The request size is invalid.")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("The request body must be a JSON object.")
+            if payload.get("model") != MODEL_ID:
+                self._json(404, {"error": {"message": "The requested model is not available.", "type": "model_not_found", "code": "model_not_found"}})
+                return
+            messages = payload.get("messages")
+            if not isinstance(messages, list) or not messages or any(
+                not isinstance(message, dict)
+                or message.get("role") not in {"system", "user", "assistant"}
+                or not isinstance(message.get("content"), str)
+                or not message["content"].strip()
+                or len(message["content"]) > 12000
+                for message in messages
+            ):
+                raise ValueError("messages must be a non-empty array of supported text entries.")
+            if payload.get("tools") or payload.get("tool_choice") not in (None, "none"):
+                self._json(422, {"error": {"message": "Tools are not supported by the engine inference API.", "type": "unsupported_feature", "code": "tools_not_supported"}})
+                return
+            if "max_tokens" in payload and "max_completion_tokens" in payload:
+                raise ValueError("Use max_completion_tokens or max_tokens, not both.")
+            token_limit_field = "max_completion_tokens" if "max_completion_tokens" in payload else "max_tokens"
+            max_tokens = payload.get(token_limit_field, 80)
+            temperature = payload.get("temperature", 0.2)
+            if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 2048:
+                raise ValueError(f"{token_limit_field} must be between 1 and 2048.")
+            if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not 0 <= temperature <= 2:
+                raise ValueError("temperature must be between 0 and 2.")
+            request = ChatCompletionRequestV1(
+                model_id=MODEL_ID,
+                messages=messages,
+                tools=[],
+                tool_choice="none",
+                max_tokens=max_tokens,
+                temperature=float(temperature),
+            )
+            model_status = query_model_status()
+            cluster_status = query_cluster_status()
+            supervisor_status = query_supervisor_status()
+            supervised_state = supervisor_status.get("supervisor_state")
+            if (
+                model_status.get("state") != "ready"
+                or not cluster_status.get("healthy")
+                or supervised_state not in {"ready", "unmanaged"}
+            ):
+                self._json(503, {"error": {
+                    "message": "Distributed inference is not ready. Check model and Android worker status.",
+                    "type": "service_unavailable",
+                    "code": "inference_unavailable",
+                }})
+                return
+            if payload.get("stream", False):
+                self._stream_engine_completion(request)
+            else:
+                result = _INFERENCE_PROVIDER.complete(request).message
+                content = result.get("content")
+                if not isinstance(content, str) or not content.strip():
+                    raise RuntimeError("The model returned no text.")
+                created = int(time.time())
+                self._json(200, {
+                    "id": f"chatcmpl-{uuid.uuid4().hex}",
+                    "object": "chat.completion",
+                    "created": created,
+                    "model": MODEL_ID,
+                    "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": content},
+                        "finish_reason": "stop",
+                    }],
+                })
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._json(400, {"error": {"message": str(exc), "type": "invalid_request_error", "code": "invalid_request"}})
+        except Exception as exc:
+            self._json(502, {"error": {"message": str(exc), "type": "engine_error", "code": "inference_failed"}})
+
+    def _stream_engine_completion(self, request: ChatCompletionRequestV1) -> None:
+        completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+        created = int(time.time())
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            received_content = False
+            for text in _INFERENCE_PROVIDER.stream(request):
+                received_content = received_content or bool(text)
+                chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": MODEL_ID,
+                    "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}],
+                }
+                self.wfile.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+            if not received_content:
+                raise RuntimeError("The model returned no text.")
+            final_chunk = {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": MODEL_ID,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            }
+            self.wfile.write(f"data: {json.dumps(final_chunk)}\n\ndata: [DONE]\n\n".encode("utf-8"))
+            self.wfile.flush()
+        except Exception as exc:
+            error = {"error": {"message": str(exc), "type": "engine_error", "code": "inference_failed"}}
+            self.wfile.write(f"data: {json.dumps(error, ensure_ascii=False)}\n\ndata: [DONE]\n\n".encode("utf-8"))
+            self.wfile.flush()
 
     def _handle_chat_stream(self) -> None:
         try:

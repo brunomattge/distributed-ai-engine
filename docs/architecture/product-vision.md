@@ -200,7 +200,7 @@ Numbers and runtime names above are **illustrative**, not measured device facts.
 - **Control plane:** enrolls, monitors, schedules and coordinates resources.
 - **Execution plane:** performs actual inference on capable devices.
 - An `online` node may not be `ready-for-inference`; model compatibility, memory, thermal state and runtime health should be independently reported.
-- Keep communication transport distinct from inference backend (USB/ADB may be development-only; supported Wi-Fi/LAN operation is an explicit goal).
+- Keep communication transport distinct from inference backend. The MVP uses USB/ADB; any later network transport must be authenticated and separately accepted.
 
 ## 7. Three Distinct Scaling Modes
 
@@ -214,7 +214,7 @@ The scheduler must distinguish workload types and routing policies. Avoid confla
 
 ## 8. Key Engineering Decisions to Explore
 
-1. **Connection independence:** Progress from USB/ADB-specific visibility to optional authenticated network connectivity over local Wi-Fi/LAN, without discarding existing USB workflow.
+1. **Connection independence:** Progress from USB/ADB-specific visibility to optional authenticated wired Ethernet connectivity when supported hardware and a concrete use case are available, without discarding the USB workflow.
 2. **Capability-based scheduling:** Match workload requirements with node architecture, memory budget, runtime/accelerator support, topology and current load.
 3. **Cluster membership:** Node enrollment, heartbeats, liveness vs readiness, lease expiry, reconnection, drain and removal.
 4. **Fault handling:** Timeouts, cancellation, explicit failure states, re-queuing when safe, and limitations of restarting single-model distributed inference after a node is lost.
@@ -253,7 +253,7 @@ The scheduler must distinguish workload types and routing policies. Avoid confla
 - Add reconnection behavior and telemetry validation.
 - Add another hardware class only after testing the adapter against actual hardware or a faithful simulation.
 
-**Exit criteria:** A compatible Android device can run with its USB cable disconnected while connected by Wi-Fi, assuming Android process constraints permit; the dashboard distinguishes connected vs inferencing-capable.
+**Exit criteria:** A compatible future node can use authenticated wired Ethernet when its hardware supports it; the dashboard distinguishes connected from inference-capable. This is outside the Android USB MVP.
 
 ### Milestone 3 — Scheduler and multi-cluster foundation
 

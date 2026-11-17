@@ -15,7 +15,7 @@ The performance roadmap needs comparable runs of one GGUF with one, two and thre
 
 - This is a repeatable experiment switch, not production placement logic or a public API.
 - The selected prefix follows the current ADB worker order. It is not capability-aware; the mixed 2×A07 + 1×A06 cohort must be reported.
-- A small cold sweep with three requests per setting has been recorded, but it does not establish a general performance trend. Thermal state and repeat sessions on other days remain unmeasured.
+- A three-request cold sweep with per-request Android RAM and `SKIN` temperature sampling has been recorded for each worker count. It does not establish a general performance trend; thermal changes across longer runs, other days, or other hardware remain unmeasured.
 - A single selected RPC is a baseline configuration, not evidence that all cluster devices participated.
 
 ## Verification

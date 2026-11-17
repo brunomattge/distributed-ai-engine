@@ -19,6 +19,11 @@ builder.Services.AddHttpClient<IPythonAgentClient, PythonAgentClient>(client =>
     client.BaseAddress = new Uri(agentRuntimeUrl, UriKind.Absolute);
     client.Timeout = TimeSpan.FromMinutes(20);
 });
+builder.Services.AddHttpClient<IPythonInferenceClient, PythonInferenceClient>(client =>
+{
+    client.BaseAddress = new Uri(agentRuntimeUrl, UriKind.Absolute);
+    client.Timeout = TimeSpan.FromMinutes(20);
+});
 builder.Services.AddSingleton<IInferenceReadiness, InferenceReadinessService>();
 builder.Services.AddSingleton(NpgsqlDataSource.Create(chatDatabaseUrl));
 builder.Services.AddSingleton<IChatConversationStore, PostgresChatConversationStore>();
@@ -45,6 +50,7 @@ app.MapGet("/api/inference-status", (IInferenceReadiness readiness, Cancellation
 
 app.MapChatEndpoint();
 app.MapChatStreamEndpoint();
+app.MapInferenceApiEndpoints();
 app.MapChatConversationEndpoints();
 app.MapAgentMemoryEndpoints();
 

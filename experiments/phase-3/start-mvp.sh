@@ -53,6 +53,17 @@ RECOVERY_GENERATION=0
 MAX_RECOVERY_ATTEMPTS="${INFERENCE_MAX_RECOVERIES:-2}"
 INFERENCE_WORKER_COUNT="${INFERENCE_WORKER_COUNT:-3}"
 [[ "$INFERENCE_WORKER_COUNT" =~ ^[1-3]$ ]] || fail "INFERENCE_WORKER_COUNT must be 1, 2, or 3."
+BENCHMARK_REPETITIONS="${INFERENCE_BENCHMARK_REPETITIONS:-}"
+BENCHMARK_MODEL_LICENSE="${INFERENCE_BENCHMARK_MODEL_LICENSE:-}"
+BENCHMARK_RUNTIME_REVISION="${INFERENCE_BENCHMARK_RUNTIME_REVISION:-}"
+BENCHMARK_HARDWARE_COHORT="${INFERENCE_BENCHMARK_HARDWARE_COHORT:-}"
+BENCHMARK_OUTPUT="${INFERENCE_BENCHMARK_OUTPUT:-}"
+if [[ -n "$BENCHMARK_REPETITIONS" ]]; then
+  [[ "$BENCHMARK_REPETITIONS" =~ ^[0-9]+$ && "$BENCHMARK_REPETITIONS" -ge 1 && "$BENCHMARK_REPETITIONS" -le 100 ]] || fail "INFERENCE_BENCHMARK_REPETITIONS must be between 1 and 100."
+  [[ -n "$BENCHMARK_MODEL_LICENSE" ]] || fail "INFERENCE_BENCHMARK_MODEL_LICENSE is required when benchmarking."
+  [[ -n "$BENCHMARK_RUNTIME_REVISION" ]] || fail "INFERENCE_BENCHMARK_RUNTIME_REVISION is required when benchmarking."
+  [[ -n "$BENCHMARK_HARDWARE_COHORT" ]] || fail "INFERENCE_BENCHMARK_HARDWARE_COHORT is required when benchmarking."
+fi
 PHONE_WAIT_SECONDS="${INFERENCE_PHONE_WAIT_SECONDS:-600}"
 RPC_PORTS=(50052 50053 50054)
 RPC_ENDPOINTS=()
@@ -283,7 +294,9 @@ write_summary() {
       printf -v "model$index" '%s (Android %s)' "$model" "$version"
     done < "$RUN_DIR/devices.tsv"
   fi
-  if [[ "$chats" -ge 1 && "$selected_workers_pass" -eq 1 && "$host" == "0" ]]; then
+  if [[ -n "$BENCHMARK_REPETITIONS" ]]; then
+    if [[ "$exit_code" -eq 0 ]]; then result="BENCHMARK COMPLETED"; else result="BENCHMARK FAILED"; fi
+  elif [[ "$chats" -ge 1 && "$selected_workers_pass" -eq 1 && "$host" == "0" ]]; then
     result="INFERENCE OBSERVED"
     if [[ "$INFERENCE_WORKER_COUNT" -eq 3 && "$tool_calls" -ge 1 ]]; then result="PASSED"; fi
   elif [[ "$exit_code" -eq 0 ]]; then
@@ -299,6 +312,7 @@ write_summary() {
     printf 'Answered messages: %s\n' "$chats"
     printf 'Supervised restarts: %s\n' "$RECOVERY_COUNT"
     printf 'Status tool calls: %s\n' "$tool_calls"
+    if [[ -n "$BENCHMARK_REPETITIONS" ]]; then printf 'Benchmark requests requested: %s\n' "$BENCHMARK_REPETITIONS"; fi
     printf 'GRAPH_RECOMPUTE operations in cumulative worker logs: %s, %s, %s\n' "$count1" "$count2" "$count3"
     printf 'Server startup until ready: %s s\n' "$MODEL_READY_SECONDS"
     printf 'Last request: prompt %s s; total %s s; generation %s tokens/s\n' "$prompt_s" "$request_s" "$speed"
@@ -308,6 +322,26 @@ write_summary() {
   } > "$RUN_DIR/summary-en-us.log"
   printf '\n'
   cat "$RUN_DIR/summary-en-us.log"
+}
+
+run_benchmark() {
+  [[ -n "$BENCHMARK_REPETITIONS" ]] || return 1
+  local benchmark_args=(
+    --workers "$INFERENCE_WORKER_COUNT"
+    --model-file "$MODEL"
+    --model-license "$BENCHMARK_MODEL_LICENSE"
+    --runtime-revision "$BENCHMARK_RUNTIME_REVISION"
+    --hardware-cohort "$BENCHMARK_HARDWARE_COHORT"
+    --context 512
+    --max-tokens "${INFERENCE_BENCHMARK_MAX_TOKENS:-2}"
+    --temperature "${INFERENCE_BENCHMARK_TEMPERATURE:-0.2}"
+    --repetitions "$BENCHMARK_REPETITIONS"
+    --devices-file "$RUN_DIR/devices.tsv"
+    --adb "$ADB"
+    --telemetry-interval-seconds "${INFERENCE_BENCHMARK_TELEMETRY_INTERVAL_SECONDS:-0.5}"
+  )
+  [[ -z "$BENCHMARK_OUTPUT" ]] || benchmark_args+=(--output "$BENCHMARK_OUTPUT")
+  python3 "$PHASE_DIR/python/benchmark_client.py" "${benchmark_args[@]}"
 }
 
 [[ -f "$MODEL" ]] || fail "Model GGUF not found: $MODEL"
@@ -362,6 +396,14 @@ while true; do
     write_supervisor_status "ready" "Distributed model is ready; ${INFERENCE_WORKER_COUNT}/3 selected RPC workers are used for inference and all three processes are available."
     printf 'Model server ready. Chat UI: http://127.0.0.1:8000\n'
     printf 'Supervision is active. Press Ctrl+C here to stop this session.\n'
+    if [[ -n "$BENCHMARK_REPETITIONS" ]]; then
+      printf 'Running %s uncached benchmark requests for the selected %s-worker configuration.\n' "$BENCHMARK_REPETITIONS" "$INFERENCE_WORKER_COUNT"
+      if run_benchmark; then
+        exit 0
+      else
+        exit $?
+      fi
+    fi
     monitor_model_server
   fi
 

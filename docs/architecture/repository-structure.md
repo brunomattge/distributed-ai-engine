@@ -68,13 +68,18 @@ This document describes the current repository layout for review. It reflects th
 │   │   ├── 0012-cluster-scoped-model-profiles.md
 │   │   ├── 0013-gate-chat-on-distributed-inference-readiness.md
 │   │   ├── 0014-supervised-rpc-session-recovery.md
-│   │   └── 0015-experimental-rpc-worker-count.md
+│   │   ├── 0015-experimental-rpc-worker-count.md
+│   │   ├── 0016-model-agnostic-android-discovery.md
+│   │   └── 0017-loopback-openai-shaped-inference-preview.md
 │   ├── architecture/
 │   │   ├── current-state.md
 │   │   ├── product-vision.md
 │   │   ├── repository-structure.md
 │   │   └── target-state.md
 │   └── architecture.md
+├── examples/
+│   └── clients/
+│       └── stream_completion.py
 ├── experiments/
 │   ├── phase-0/
 │   │   ├── bootstrap-llama.sh
@@ -126,7 +131,8 @@ This document describes the current repository layout for review. It reflects th
 │           │   └── Endpoints/
 │           │       ├── AgentMemoryEndpoints.cs
 │           │       ├── ChatConversationEndpoints.cs
-│           │       └── ChatEndpoint.cs
+│           │       ├── ChatEndpoint.cs
+│           │       └── InferenceApiEndpoints.cs
 │           ├── Application/
 │           │   ├── Cluster/
 │           │   │   └── NodeRegistry.cs
@@ -136,10 +142,13 @@ This document describes the current repository layout for review. It reflects th
 │           │       ├── IAgentMemoryStore.cs
 │           │       ├── IChatConversationStore.cs
 │           │       ├── IPythonAgentClient.cs
+│           │       ├── IPythonInferenceClient.cs
 │           │       └── StorageUnavailableException.cs
 │           ├── Infrastructure/
 │           │   ├── AgentRuntime/
 │           │   │   └── PythonAgentClient.cs
+│           │   ├── InferenceRuntime/
+│           │   │   └── PythonInferenceClient.cs
 │           │   └── Persistence/
 │           │       ├── AgentMemoryStore.cs
 │           │       ├── ChatConversationStore.cs
@@ -151,19 +160,23 @@ This document describes the current repository layout for review. It reflects th
 │   │   └── DistributedAI.Platform.Tests/
 │   │       ├── Api/
 │   │       │   ├── AgentMemoryEndpointTests.cs
-│   │       │   └── ChatConversationEndpointTests.cs
+│   │       │   ├── ChatConversationEndpointTests.cs
+│   │       │   └── InferenceApiEndpointTests.cs
 │   │       ├── Application/
 │   │       │   ├── Cluster/
 │   │       │   │   └── NodeRegistryTests.cs
 │   │       │   └── Inference/
 │   │       │       └── InferenceReadinessTests.cs
 │   │       ├── Infrastructure/
-│   │       │   └── PythonAgentClientTests.cs
+│   │       │   ├── PythonAgentClientTests.cs
+│   │       │   └── PythonInferenceClientTests.cs
 │   │       └── DistributedAI.Platform.Tests.csproj
 │   └── python/
 │       ├── __init__.py
 │       ├── test_adb_node_bridge.py
 │       ├── test_chat_server.py
+│       ├── test_local_mvp_launcher.py
+│       ├── test_inference_smoke_client.py
 │       └── test_llama_cpp_provider.py
 ├── tools/
 │   ├── DistributedAI.NodeSimulator/
@@ -172,6 +185,7 @@ This document describes the current repository layout for review. It reflects th
 │   ├── adb_node_bridge.py
 │   ├── phase-1-smoke.sh
 │   ├── run-dashboard.sh
+│   ├── run-local-mvp.sh
 │   └── start-postgres.sh
 ├── .gitignore
 ├── CODE_OF_CONDUCT.md
@@ -201,10 +215,11 @@ Angular feature pages
                                                 ▲
                                                 │
                                       Infrastructure adapters
-                                       ├── Python agent HTTP client
+                                       ├── Python agent/inference HTTP clients
                                        └── PostgreSQL stores
 
-Python API adapter ── Agent runtime ── Inference provider contract ── llama.cpp adapter
+Python chat adapter ── Agent runtime ── Inference provider contract ── llama.cpp adapter
+ASP.NET `/v1` adapter ── Python inference HTTP client ── Python provider API
 ```
 
 The .NET project is a small modular monolith with Clean Architecture/ports-and-adapters boundaries: HTTP endpoints and infrastructure depend inward on application behavior and contracts; application ports describe required external capabilities; concrete PostgreSQL and Python HTTP adapters implement those ports. `Program.cs` is the composition root. Minimal API endpoint modules are the HTTP adapter; MVC controllers would add ceremony without a current need for controller-specific behavior.
