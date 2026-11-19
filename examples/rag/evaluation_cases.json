@@ -1,0 +1,17 @@
+[
+  {
+    "question": "What is the refund request period after purchase?",
+    "expected_source": "returns.md",
+    "expected_fact": "30 calendar days"
+  },
+  {
+    "question": "How many days are access logs retained?",
+    "expected_source": "security.md",
+    "expected_fact": "14 days"
+  },
+  {
+    "question": "When does support send its first ticket response?",
+    "expected_source": "support.txt",
+    "expected_fact": "two business days"
+  }
+]

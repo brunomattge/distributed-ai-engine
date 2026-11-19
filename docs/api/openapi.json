@@ -1,0 +1,299 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Distributed AI Engine Local Inference API",
+    "version": "1.0.0-preview",
+    "description": "A loopback-only, OpenAI-shaped subset for the currently loaded model. This is not full OpenAI API compatibility. It supports text chat completions, optional SSE streaming, and the single_model_distributed workload only. Independent replicas, tools, embeddings, authentication, usage accounting, model selection, and network exposure are unsupported."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:5100",
+      "description": "Local ASP.NET Core platform; do not expose this unauthenticated preview to a network."
+    }
+  ],
+  "paths": {
+    "/v1/models": {
+      "get": {
+        "operationId": "listModels",
+        "summary": "List the model loaded by the current cluster",
+        "responses": {
+          "200": {
+            "description": "The single configured model.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModelList" }
+              }
+            }
+          },
+          "502": { "$ref": "#/components/responses/RuntimeUnavailable" }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "createChatCompletion",
+        "summary": "Create one completion from the model distributed across the selected workers",
+        "description": "The model field must match the currently loaded model. After admission, the response identifies the selected RPC workers in headers; pre-admission validation errors have no job metadata. Supplying workload_mode=independent_replicas is rejected; concurrent requests are separate jobs and are not a replica-throughput feature.",
+        "parameters": [
+          { "$ref": "#/components/parameters/JobIdHeader" },
+          { "$ref": "#/components/parameters/WorkloadModeHeader" },
+          { "$ref": "#/components/parameters/ModelHeader" },
+          { "$ref": "#/components/parameters/BackendHeader" },
+          { "$ref": "#/components/parameters/SelectedNodesHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatCompletionRequest" },
+              "examples": {
+                "nonStreaming": {
+                  "value": {
+                    "model": "qwen2.5-0.5b-instruct-q4_k_m",
+                    "messages": [{ "role": "user", "content": "Explain RPC in one sentence." }],
+                    "max_completion_tokens": 80,
+                    "temperature": 0.2
+                  }
+                },
+                "streaming": {
+                  "value": {
+                    "model": "qwen2.5-0.5b-instruct-q4_k_m",
+                    "messages": [{ "role": "user", "content": "Explain RPC in one sentence." }],
+                    "stream": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A completion. When stream=true, the response is server-sent events and ends with data: [DONE].",
+            "headers": {
+              "X-Distributed-AI-Job-Id": { "$ref": "#/components/headers/JobId" },
+              "X-Distributed-AI-Workload-Mode": { "$ref": "#/components/headers/WorkloadMode" },
+              "X-Distributed-AI-Model": { "$ref": "#/components/headers/Model" },
+              "X-Distributed-AI-Backend": { "$ref": "#/components/headers/Backend" },
+              "X-Distributed-AI-Selected-Nodes": { "$ref": "#/components/headers/SelectedNodes" }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChatCompletion" } },
+              "text/event-stream": { "schema": { "type": "string", "description": "OpenAI-shaped chat.completion.chunk events followed by data: [DONE]." } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/ModelNotFound" },
+          "422": { "$ref": "#/components/responses/UnsupportedFeature" },
+          "501": { "$ref": "#/components/responses/UnsupportedWorkload" },
+          "502": { "$ref": "#/components/responses/InferenceFailure" },
+          "503": { "$ref": "#/components/responses/InferenceUnavailable" }
+        }
+      }
+    },
+    "/api/inference/jobs/{jobId}": {
+      "get": {
+        "operationId": "getInferenceJob",
+        "summary": "Get recent process-local inference job status",
+        "description": "The registry retains at most 256 jobs in memory. Terminal jobs are evicted first. Job status is lost when the platform restarts and does not provide replay or recovery.",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job's current or terminal state.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InferenceJob" } } }
+          },
+          "404": { "$ref": "#/components/responses/JobNotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "JobIdHeader": {
+        "name": "X-Distributed-AI-Job-Id",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "WorkloadModeHeader": {
+        "name": "X-Distributed-AI-Workload-Mode",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string", "enum": ["single_model_distributed"] }
+      },
+      "ModelHeader": {
+        "name": "X-Distributed-AI-Model",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" }
+      },
+      "BackendHeader": {
+        "name": "X-Distributed-AI-Backend",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string", "enum": ["llama.cpp-rpc"] }
+      },
+      "SelectedNodesHeader": {
+        "name": "X-Distributed-AI-Selected-Nodes",
+        "in": "header",
+        "required": false,
+        "description": "Comma-separated hashed node IDs selected at admission; this is placement intent, not proof of per-node graph execution.",
+        "schema": { "type": "string" }
+      }
+    },
+    "headers": {
+      "JobId": { "description": "The process-local job ID.", "schema": { "type": "string", "format": "uuid" } },
+      "WorkloadMode": { "schema": { "type": "string", "enum": ["single_model_distributed"] } },
+      "Model": { "schema": { "type": "string" } },
+      "Backend": { "schema": { "type": "string", "enum": ["llama.cpp-rpc"] } },
+      "SelectedNodes": { "description": "Comma-separated hashed node IDs selected at admission.", "schema": { "type": "string" } }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid request body, model field, workload mode, or parameter value.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "ModelNotFound": {
+        "description": "The requested model is not loaded by this cluster.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "UnsupportedFeature": {
+        "description": "A supported request cannot use tools or tool choice.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "UnsupportedWorkload": {
+        "description": "The requested execution mode is unsupported. Only one model distributed across RPC workers is available.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "InferenceFailure": {
+        "description": "The runtime failed after admission; the session may be degraded.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "InferenceUnavailable": {
+        "description": "The coordinator, required workers, or job capacity is unavailable.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "RuntimeUnavailable": {
+        "description": "The Python inference runtime could not be reached.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "JobNotFound": {
+        "description": "The job ID is unknown or its record has been evicted.",
+        "content": {}
+      }
+    },
+    "schemas": {
+      "ChatCompletionRequest": {
+        "type": "object",
+        "required": ["model", "messages"],
+        "properties": {
+          "model": { "type": "string", "description": "Must match the currently loaded model ID returned by /v1/models." },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/ChatMessage" }
+          },
+          "stream": { "type": "boolean", "default": false },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 2, "default": 0.2 },
+          "max_completion_tokens": { "type": "integer", "minimum": 1, "maximum": 2048 },
+          "max_tokens": { "type": "integer", "minimum": 1, "maximum": 2048, "description": "Legacy alias for max_completion_tokens. Do not send both fields." },
+          "workload_mode": { "type": "string", "enum": ["single_model_distributed"], "default": "single_model_distributed" }
+        },
+        "not": { "required": ["max_completion_tokens", "max_tokens"] },
+        "additionalProperties": true
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": { "type": "string", "enum": ["system", "user", "assistant"] },
+          "content": { "type": "string", "minLength": 1, "maxLength": 12000 }
+        },
+        "additionalProperties": false
+      },
+      "ModelList": {
+        "type": "object",
+        "required": ["object", "data"],
+        "properties": {
+          "object": { "const": "list" },
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/Model" } }
+        }
+      },
+      "Model": {
+        "type": "object",
+        "required": ["id", "object", "created", "owned_by"],
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "const": "model" },
+          "created": { "type": "integer" },
+          "owned_by": { "type": "string" }
+        }
+      },
+      "ChatCompletion": {
+        "type": "object",
+        "required": ["id", "object", "created", "model", "choices"],
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "const": "chat.completion" },
+          "created": { "type": "integer" },
+          "model": { "type": "string" },
+          "choices": { "type": "array", "items": { "$ref": "#/components/schemas/ChatCompletionChoice" } }
+        }
+      },
+      "ChatCompletionChoice": {
+        "type": "object",
+        "required": ["index", "message", "finish_reason"],
+        "properties": {
+          "index": { "type": "integer" },
+          "message": { "$ref": "#/components/schemas/AssistantMessage" },
+          "finish_reason": { "type": "string", "enum": ["stop"] }
+        }
+      },
+      "AssistantMessage": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": { "const": "assistant" },
+          "content": { "type": "string" }
+        }
+      },
+      "InferenceJob": {
+        "type": "object",
+        "required": ["id", "state", "workloadMode", "modelId", "backend", "selectedNodeIds", "acceptedAtUtc"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "state": { "type": "string", "enum": ["accepted", "running", "completed", "failed", "cancelled", "timed_out"] },
+          "workloadMode": { "type": "string", "enum": ["single_model_distributed"] },
+          "modelId": { "type": "string" },
+          "backend": { "type": "string", "enum": ["llama.cpp-rpc"] },
+          "selectedNodeIds": { "type": "array", "items": { "type": "string" } },
+          "acceptedAtUtc": { "type": "string", "format": "date-time" },
+          "startedAtUtc": { "type": ["string", "null"], "format": "date-time" },
+          "finishedAtUtc": { "type": ["string", "null"], "format": "date-time" },
+          "failureCode": { "type": ["string", "null"] }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["message", "type", "code"],
+            "properties": {
+              "message": { "type": "string" },
+              "type": { "type": "string" },
+              "code": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

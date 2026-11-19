@@ -1,6 +1,6 @@
 # Repository Structure and Architectural Boundaries
 
-This document describes the current repository layout for review. It reflects the implementation that exists today; future platform, GPU, RAG, and agent capabilities are not represented as implemented modules.
+This document describes the current repository layout for review. It reflects the implementation that exists today; future platform, GPU, semantic RAG, and agent capabilities are not represented as implemented modules. The optional lexical RAG CLI is a reference application outside the engine core.
 
 ## Complete source tree
 
@@ -53,6 +53,8 @@ This document describes the current repository layout for review. It reflects th
 │       ├── tsconfig.json
 │       └── tsconfig.spec.json
 ├── docs/
+│   ├── api/
+│   │   └── openapi.json
 │   ├── adr/
 │   │   ├── 0001-single-model-distributed-inference.md
 │   │   ├── 0002-hybrid-platform-and-ai-stack.md
@@ -79,8 +81,16 @@ This document describes the current repository layout for review. It reflects th
 │   │   └── target-state.md
 │   └── architecture.md
 ├── examples/
-│   └── clients/
-│       └── stream_completion.py
+│   ├── clients/
+│   │   └── stream_completion.py
+│   └── rag/
+│       ├── ask_documents.py
+│       ├── evaluation_cases.json
+│       ├── README.md
+│       └── sample_documents/
+│           ├── returns.md
+│           ├── security.md
+│           └── support.txt
 ├── experiments/
 │   ├── phase-0/
 │   │   ├── bootstrap-llama.sh
@@ -179,10 +189,14 @@ This document describes the current repository layout for review. It reflects th
 │   └── python/
 │       ├── __init__.py
 │       ├── test_adb_node_bridge.py
+│       ├── test_android_telemetry.py
+│       ├── test_benchmark_client.py
 │       ├── test_chat_server.py
-│       ├── test_local_mvp_launcher.py
 │       ├── test_inference_smoke_client.py
-│       └── test_llama_cpp_provider.py
+│       ├── test_llama_cpp_provider.py
+│       ├── test_local_mvp_launcher.py
+│       ├── test_openapi_contract.py
+│       └── test_rag_example.py
 ├── tools/
 │   ├── DistributedAI.NodeSimulator/
 │   │   ├── DistributedAI.NodeSimulator.csproj

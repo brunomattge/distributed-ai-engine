@@ -226,12 +226,12 @@ class ChatBehaviorTests(unittest.TestCase):
         status.assert_called_once_with()
 
     def test_streaming_failure_is_propagated_after_partial_deltas(self):
-        provider = FakeChatProvider([], chunks=["parcial"], stream_error=RuntimeError("stream caiu"))
+        provider = FakeChatProvider([], chunks=["partial"], stream_error=RuntimeError("stream failed"))
         runtime = AgentRuntimeV1(provider, lambda: {}, lambda event: None, "fake")
         stream = runtime.chat_stream(self.messages)
 
-        self.assertEqual(next(stream), {"event": "delta", "text": "parcial"})
-        with self.assertRaisesRegex(RuntimeError, "stream caiu"):
+        self.assertEqual(next(stream), {"event": "delta", "text": "partial"})
+        with self.assertRaisesRegex(RuntimeError, "stream failed"):
             next(stream)
 
     def test_streaming_failure_before_first_content_does_not_record_a_ttfc(self):
@@ -507,7 +507,7 @@ class LocalHttpTests(unittest.TestCase):
 
     def test_stream_endpoint_returns_error_event_after_stream_failure(self):
         runtime = AgentRuntimeV1(
-            FakeChatProvider([], chunks=["parcial"], stream_error=RuntimeError("stream caiu")),
+            FakeChatProvider([], chunks=["partial"], stream_error=RuntimeError("stream failed")),
             lambda: {},
             lambda event: None,
             "fake",
@@ -522,8 +522,8 @@ class LocalHttpTests(unittest.TestCase):
             with urlopen(request, timeout=2) as response:
                 stream = response.read().decode("utf-8")
 
-        self.assertIn('event: delta\ndata: {"text": "parcial"}', stream)
-        self.assertTrue(stream.endswith('event: error\ndata: {"error": "stream caiu"}\n\n'))
+        self.assertIn('event: delta\ndata: {"text": "partial"}', stream)
+        self.assertTrue(stream.endswith('event: error\ndata: {"error": "stream failed"}\n\n'))
 
     def test_stream_endpoint_rejects_invalid_messages_before_opening_stream(self):
         request = Request(

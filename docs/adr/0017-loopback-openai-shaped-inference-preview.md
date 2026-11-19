@@ -19,6 +19,7 @@ This is a compatibility preview, not a stable or complete OpenAI API. Tool calli
 - Agent tools and explicit memories cannot affect these completion requests.
 - Independent clients use `http://127.0.0.1:5100/v1` by default and inherit the platform's readiness and degraded-session behavior.
 - A dependency-free terminal reference client demonstrates model discovery, streaming, and client-side latency reporting.
+- A checked-in OpenAPI 3.1 JSON document describes the supported preview surface; a dependency-free regression test validates its structure, operations, limits, and local references.
 - The official OpenAI Python SDK 2.48.0 was exercised against model listing, SSE chat completion, and structured unsupported-tool errors; this validates those operations only and does not claim full API compatibility.
 - The modern `max_completion_tokens` field and legacy `max_tokens` alias are mapped to the same provider limit and validated by unit tests plus a physical SDK request.
 - The internal Python routes on port 8000 still bypass the .NET failure-generation latch; clients must not use them directly.

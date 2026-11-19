@@ -16,11 +16,11 @@ The product and architecture reference is [Distributed AI Engine — Product Vis
 | Conversation history and explicit memory notes | **Implemented locally** | Existing chatbot application features, not engine state |
 | Python provider adapter and read-only cluster-status tool | **Experimental** | Local prototype; not a stable public engine API or general agent platform |
 | Backend-neutral inference provider boundary | **Experimental local implementation** | Python inference client is isolated behind a .NET application port; no stable provider/plugin contract yet |
-| OpenAI-shaped inference API | **Experimental local preview** | `/v1/models` and streaming/non-streaming `/v1/chat/completions` through the loopback .NET gateway; a standard-library terminal client is included; limited subset, not a stable public API |
+| OpenAI-shaped inference API | **Experimental local preview** | `/v1/models` and streaming/non-streaming `/v1/chat/completions` through the loopback .NET gateway; [OpenAPI contract](docs/api/openapi.json) and standard-library terminal client; limited subset, not a stable public API |
 | Single-cluster workload admission | **Experimental local implementation** | Deterministic selection for the loaded model and `llama.cpp-rpc`; response metadata and bounded in-memory job state; independent replicas are unsupported |
 | Authenticated LAN nodes, additional operating systems, multiple clusters | **Planned** | Progressive support after real adapter/security validation |
 | Embeddings | **Planned / optional capability** | Separate model/backend acceptance; no required vector database in engine |
-| RAG application | **Planned / optional application** | Post-core; storage/indexing remains outside engine |
+| RAG application | **Experimental / optional application** | [Standalone lexical CLI](examples/rag/README.md) with source metadata; no embeddings or vector store; separate from engine core |
 | Tool-using agent application | **Experimental now; optional future application** | Current chatbot has one read-only tool; side effects require future controls |
 | Fine-tuning | **Out of scope** | No current MVP commitment |
 
@@ -101,7 +101,7 @@ The script creates a random local password in the ignored file `infra/.env` (per
 docker compose --env-file infra/.env -f infra/compose.yaml stop postgres
 ```
 
-The conversation endpoints are `GET /api/conversations`, `GET /api/conversations/{id}`, and `PUT /api/conversations/{id}`. The memory endpoints are `GET /api/memories`, `POST /api/memories`, and `DELETE /api/memories/{id}`. The Angular chat persists completed message snapshots, resumes the last conversation, lists up to 50 recent conversations, and can start a new chat without deleting earlier ones. On the chat route, users can save up to 10 explicit memory notes; the .NET API adds them to both normal and streaming chat requests, and the Python runtime treats them as untrusted context. RAG remains future work.
+The conversation endpoints are `GET /api/conversations`, `GET /api/conversations/{id}`, and `PUT /api/conversations/{id}`. The memory endpoints are `GET /api/memories`, `POST /api/memories`, and `DELETE /api/memories/{id}`. The Angular chat persists completed message snapshots, resumes the last conversation, lists up to 50 recent conversations, and can start a new chat without deleting earlier ones. On the chat route, users can save up to 10 explicit memory notes; the .NET API adds them to both normal and streaming chat requests, and the Python runtime treats them as untrusted context. The separate [optional RAG CLI](examples/rag/README.md) uses lexical retrieval and does not share chat memory or storage.
 
 To build and validate the current .NET platform slice without phones or a model:
 

@@ -42,11 +42,14 @@ The diagram describes the current dashboard plus its intended/current chat integ
 | Inference | Upstream llama.cpp `llama-server` + `ggml-rpc-server` Android ARM64 workers; one GGUF distributed by RPC | Experimental, development scripts, USB ADB transport; RPC is unauthenticated |
 | Android node telemetry | Mac-hosted Python ADB bridge reads CPU, available RAM and thermal service; hashes serials | It is a development bridge, not an Android-resident authenticated node agent; discovery is model-agnostic, while worker/runtime compatibility is still device-specific |
 | Persistence | Dedicated local PostgreSQL container; chat snapshots and user-managed notes | No document/vector store; no multi-user tenancy |
+| Optional RAG example | Standalone Python CLI with BM25 lexical retrieval, source metadata, and the loopback engine API | No embeddings, vector database, semantic search, persistent index, or validated generated-answer grounding |
 | Packaging/operations | Coordinated one-terminal local MVP launcher, standalone phase launchers, run records, local build/test instructions, GitHub Actions CI for host-side checks | No versioned release artifact; components are not one installable product |
 
-Relevant code: `apps/web/src/app/`, `src/dotnet/DistributedAI.Platform/`, `src/dotnet/DistributedAI.Contracts/`, `experiments/phase-3/python/inference/`, `experiments/phase-3/python/agent_runtime/`, `experiments/phase-0/`, `experiments/phase-1/`, and `tools/`.
+Relevant code: `apps/web/src/app/`, `src/dotnet/DistributedAI.Platform/`, `src/dotnet/DistributedAI.Contracts/`, `examples/rag/`, `experiments/phase-3/python/inference/`, `experiments/phase-3/python/agent_runtime/`, `experiments/phase-0/`, `experiments/phase-1/`, and `tools/`.
 
 The ASP.NET Core platform now proxies `/v1/models` and `/v1/chat/completions` to the Python runtime. Completion requests pass through the .NET distributed-readiness gate and deterministic placement for the currently loaded model. Responses identify the workload mode, backend, and selected node IDs in headers; `/api/inference/jobs/{id}` reports accepted/running/terminal state from a bounded process-local store. Jobs are not durable and are not resumable. Independent-replica mode is rejected; simultaneous requests are separate jobs and do not prove throughput scaling. A structured error in the upstream SSE stream marks the session degraded. The Python route is an internal loopback endpoint; clients should use the platform API on port 5100. The compatibility surface remains a narrow local preview, not a stable public API; see the [Phase 3 guide](../../experiments/phase-3/README.md#local-inference-api-preview) and [ADR 0018](../adr/0018-single-cluster-workload-admission.md).
+
+The preview contract is available as [OpenAPI 3.1 JSON](../api/openapi.json). It documents only the tested chat-completion subset, workload/job headers, job-status endpoint, and supported errors; it makes no claim of complete OpenAI API compatibility.
 
 ## Evidence and confidence
 
