@@ -196,9 +196,11 @@ def request_completion(
             with urlopen(f"{base_url}/v1/models", timeout=REQUEST_TIMEOUT_SECONDS) as response:
                 model_list = json.loads(response.read())
             models = model_list.get("data", []) if isinstance(model_list, dict) else []
-            if not models or not isinstance(models[0].get("id"), str):
+            first_model = models[0] if isinstance(models, list) and models else None
+            model_id = first_model.get("id") if isinstance(first_model, dict) else None
+            if not isinstance(model_id, str) or not model_id.strip():
                 raise EngineApiError("The engine returned no configured model.")
-            model = models[0]["id"]
+            model = model_id
 
         payload = json.dumps({
             "model": model,

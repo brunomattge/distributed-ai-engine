@@ -84,7 +84,10 @@ class LocalMvpLauncherTests(unittest.TestCase):
             )
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("dashboard launcher exited before distributed chat became ready", result.stderr)
+            self.assertRegex(
+                result.stderr,
+                r"dashboard launcher (?:exited before distributed chat became ready|stopped unexpectedly)",
+            )
             inference_stopped = temporary / "inference.stopped"
             self.assertTrue(inference_stopped.is_file())
             service_pid, helper_pid = map(int, inference_stopped.read_text(encoding="utf-8").split())

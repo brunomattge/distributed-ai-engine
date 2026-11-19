@@ -5,8 +5,10 @@ import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from examples.rag.ask_documents import (
+    EngineApiError,
     RagInputError,
     RetrievedChunk,
     build_messages,
@@ -85,6 +87,14 @@ class RagExampleTests(unittest.TestCase):
         with self.assertRaises(RagInputError):
             retrieve("refund request", self.chunks, top_k=11)
 
+    def test_loader_rejects_documents_over_the_size_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "oversized.txt").write_bytes(b"x" * (5 * 1024 * 1024 + 1))
+
+            with self.assertRaisesRegex(RagInputError, "5 MiB size limit"):
+                load_chunks(root)
+
     def test_client_discovers_model_and_sends_retrieved_context_to_engine_api(self):
         class FakeResponse:
             def __init__(self, payload):
@@ -115,6 +125,39 @@ class RagExampleTests(unittest.TestCase):
         self.assertEqual("qwen-local", payload["model"])
         self.assertEqual("single_model_distributed", payload["workload_mode"])
         self.assertIn("30 calendar days", payload["messages"][1]["content"])
+
+    def test_client_rejects_malformed_model_discovery_response(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"data": [null]}'
+
+        sources = retrieve("What is the refund request period?", self.chunks, top_k=1)
+        with patch("examples.rag.ask_documents.urlopen", return_value=FakeResponse()):
+            with self.assertRaisesRegex(EngineApiError, "no configured model"):
+                request_completion("What is the refund request period?", sources)
+
+    def test_client_reports_engine_http_errors_without_losing_status(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"data": [{"id": "qwen-local"}]}'
+
+        sources = retrieve("What is the refund request period?", self.chunks, top_k=1)
+        error = HTTPError("http://127.0.0.1:5100/v1/chat/completions", 503, "Unavailable", {}, io.BytesIO(b'{"error":"not ready"}'))
+        with patch("examples.rag.ask_documents.urlopen", side_effect=[FakeResponse(), error]):
+            with self.assertRaisesRegex(EngineApiError, "HTTP 503"):
+                request_completion("What is the refund request period?", sources)
 
 
 if __name__ == "__main__":

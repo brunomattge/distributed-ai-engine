@@ -24,7 +24,7 @@ The CLI discovers the loaded model through `GET /v1/models`, retrieves up to thr
 
 ## Evaluation
 
-The checked-in [evaluation cases](evaluation_cases.json) cover refund timing, access-log retention, and support response time. The tests verify top-ranked source and expected fact retrieval, untrusted-context framing, allowed citation IDs, missing-result behavior, and the HTTP request contract without requiring phones or a running model:
+The checked-in [evaluation cases](evaluation_cases.json) cover refund timing, access-log retention, and support response time. The tests verify top-ranked source and expected fact retrieval, untrusted-context framing, allowed citation IDs, input-size limits, malformed model discovery, HTTP error handling, missing-result behavior, and the request contract without requiring phones or a running model:
 
 ```sh
 python3 -m unittest tests.python.test_rag_example -v
